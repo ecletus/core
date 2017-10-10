@@ -55,6 +55,7 @@ func (MetaConfig) ConfigureQorMeta(Metaor) {
 type Meta struct {
 	Name            string
 	FieldName       string
+	EncodedName		string
 	FieldStruct     *gorm.StructField
 	Setter          func(resource interface{}, metaValue *MetaValue, context *qor.Context)
 	Valuer          func(interface{}, *qor.Context) interface{}
@@ -72,6 +73,19 @@ func (meta Meta) GetBaseResource() Resourcer {
 
 // GetName get meta's name
 func (meta Meta) GetName() string {
+	return meta.Name
+}
+
+// GetEncodedName get meta's encodedName
+func (meta Meta) GetEncodedName() string {
+	return meta.EncodedName
+}
+
+// GetEncodedName get meta's encodedName
+func (meta Meta) GetEncodedNameOrDefault() string {
+	if meta.EncodedName != "" {
+		return meta.EncodedName
+	}
 	return meta.Name
 }
 
