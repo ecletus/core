@@ -86,19 +86,17 @@ func (processor *processor) decode() (errors []error) {
 			continue
 		}
 
-		if setter := meta.GetSetter(); setter != nil {
-			setter(processor.Result, metaValue, processor.Context)
-		}
-
 		if metaValue.MetaValues != nil && len(metaValue.MetaValues.Values) > 0 {
 			if res := metaValue.Meta.GetResource(); res != nil && !reflect.ValueOf(res).IsNil() {
 				field := reflect.Indirect(reflect.ValueOf(processor.Result)).FieldByName(meta.GetFieldName())
-				if utils.ModelType(field.Addr().Interface()) == utils.ModelType(res.NewStruct()) {
+				if utils.ModelType(field.Addr().Interface()) == utils.ModelType(res.NewStruct(processor.Context.Site)) {
 					if _, ok := field.Addr().Interface().(sql.Scanner); !ok {
 						decodeMetaValuesToField(res, field, metaValue, processor.Context)
 					}
 				}
 			}
+		} else if setter := meta.GetSetter(); setter != nil {
+			setter(processor.Result, metaValue, processor.Context)
 		}
 	}
 

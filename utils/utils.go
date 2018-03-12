@@ -12,6 +12,7 @@ import (
 	"runtime"
 	"runtime/debug"
 	"time"
+	"bytes"
 
 	"go4.org/sort"
 
@@ -22,6 +23,7 @@ import (
 	"github.com/qor/qor"
 
 	"strings"
+	"github.com/moisespsena/template/html/template"
 )
 
 // AppRoot app root path
@@ -30,8 +32,8 @@ var AppRoot, _ = os.Getwd()
 // ContextKey defined type used for context's key
 type ContextKey string
 
-// ContextDBName db name used for context
-var ContextDBName ContextKey = "ContextDB"
+// DefaultLang Default App Language
+var DefaultLocale string
 
 // HTMLSanitizer html sanitizer to avoid XSS
 var HTMLSanitizer = bluemonday.UGCPolicy()
@@ -41,16 +43,12 @@ func init() {
 	if path := os.Getenv("WEB_ROOT"); path != "" {
 		AppRoot = path
 	}
-}
 
-// GetDBFromRequest get database from request
-var GetDBFromRequest = func(req *http.Request) *gorm.DB {
-	db := req.Context().Value(ContextDBName)
-	if tx, ok := db.(*gorm.DB); ok {
-		return tx
+	lang := os.Getenv("LANG")
+
+	if len(lang) >= 5 {
+		DefaultLocale = strings.Replace(strings.Split(lang, ".")[0], "_", "-", 1)
 	}
-
-	return nil
 }
 
 // HumanizeString Humanize separates string based on capitalizd letters
@@ -84,56 +82,6 @@ func ToParamString(str string) string {
 	return slug.Make(str)
 }
 
-// PatchURL updates the query part of the request url.
-//     PatchURL("google.com","key","value") => "google.com?key=value"
-func PatchURL(originalURL string, params ...interface{}) (patchedURL string, err error) {
-	url, err := url.Parse(originalURL)
-	if err != nil {
-		return
-	}
-
-	query := url.Query()
-	for i := 0; i < len(params)/2; i++ {
-		// Check if params is key&value pair
-		key := fmt.Sprintf("%v", params[i*2])
-		value := fmt.Sprintf("%v", params[i*2+1])
-
-		if value == "" {
-			query.Del(key)
-		} else {
-			query.Set(key, value)
-		}
-	}
-
-	url.RawQuery = query.Encode()
-	patchedURL = url.String()
-	return
-}
-
-// JoinURL updates the path part of the request url.
-//     JoinURL("google.com", "admin") => "google.com/admin"
-//     JoinURL("google.com?q=keyword", "admin") => "google.com/admin?q=keyword"
-func JoinURL(originalURL string, paths ...interface{}) (joinedURL string, err error) {
-	u, err := url.Parse(originalURL)
-	if err != nil {
-		return
-	}
-
-	var urlPaths = []string{u.Path}
-	for _, p := range paths {
-		urlPaths = append(urlPaths, fmt.Sprint(p))
-	}
-
-	if strings.HasSuffix(strings.Join(urlPaths, ""), "/") {
-		u.Path = path.Join(urlPaths...) + "/"
-	} else {
-		u.Path = path.Join(urlPaths...)
-	}
-
-	joinedURL = u.String()
-	return
-}
-
 // SetCookie set cookie for context
 func SetCookie(cookie http.Cookie, context *qor.Context) {
 	cookie.HttpOnly = true
@@ -145,7 +93,7 @@ func SetCookie(cookie http.Cookie, context *qor.Context) {
 
 	// set default path
 	if cookie.Path == "" {
-		cookie.Path = "/"
+		cookie.Path = context.Root().GenURL()
 	}
 
 	http.SetCookie(context.Writer, &cookie)
@@ -269,7 +217,7 @@ var GetLocale = func(context *qor.Context) string {
 		return locale.Value
 	}
 
-	return ""
+	return DefaultLocale
 }
 
 // ParseTime parse time from string
@@ -346,4 +294,35 @@ func GetAbsURL(req *http.Request) url.URL {
 
 	result.Parse(req.RequestURI)
 	return result
+}
+
+func RenderHtmlTemplate(tpl string, data interface{}) template.HTML {
+	t, err := template.New("").Parse(tpl)
+	if err != nil {
+		return template.HTML(fmt.Sprint(err))
+	}
+	var buf bytes.Buffer
+	err = t.Execute(&buf, data)
+	if err != nil {
+		return template.HTML(fmt.Sprint(err))
+	}
+	return template.HTML(buf.String())
+}
+
+func TypeId(tp interface{}) string  {
+	p := reflect.ValueOf(tp)
+
+	for p.Kind() == reflect.Ptr {
+		p = p.Elem()
+	}
+
+	t := p.Type()
+	return t.PkgPath() + "." + t.Name()
+}
+
+func StringOrEmpty(value interface{}) string {
+	if str, ok := value.(string); ok {
+		return str
+	}
+	return ""
 }

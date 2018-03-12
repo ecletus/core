@@ -11,6 +11,10 @@ type MetaValues struct {
 	Values []*MetaValue
 }
 
+func (mvs *MetaValues) IsEmpty() bool {
+	return mvs == nil || len(mvs.Values) == 0
+}
+
 // Get get meta value from MetaValues with name
 func (mvs MetaValues) Get(name string) *MetaValue {
 	for _, mv := range mvs.Values {

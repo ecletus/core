@@ -4,8 +4,10 @@ import (
 	"encoding/json"
 	"io"
 	"net/http"
+	"net/url"
 	"regexp"
 	"strings"
+	"mime/multipart"
 
 	"github.com/qor/qor"
 	"github.com/qor/qor/utils"
@@ -75,7 +77,7 @@ var (
 )
 
 // ConvertFormToMetaValues convert form to meta values
-func ConvertFormToMetaValues(request *http.Request, metaors []Metaor, prefix string) (*MetaValues, error) {
+func ConvertFormDataToMetaValues(form url.Values, multipartForm *multipart.Form, metaors []Metaor, prefix string) (*MetaValues, error) {
 	metaValues := &MetaValues{}
 	metaorsMap := map[string]Metaor{}
 	convertedNextLevel := map[string]bool{}
@@ -91,7 +93,25 @@ func ConvertFormToMetaValues(request *http.Request, metaors []Metaor, prefix str
 
 			if matches := isCurrentLevel.FindStringSubmatch(key); len(matches) > 0 {
 				name := matches[0]
-				metaValue = &MetaValue{Name: name, Value: value, Meta: metaorsMap[name]}
+				// skip if has previous meta with same name and
+				// this is file and has not be set
+				if values, ok := value.([]*multipart.FileHeader); ok {
+					var files []*multipart.FileHeader
+					for _, f := range values {
+						if f.Filename != "" {
+							files = append(files, f)
+						}
+					}
+
+					prev := metaValues.Get(name)
+					if prev == nil {
+						metaValue = &MetaValue{Name: name, Value: value, Meta: metaorsMap[name]}
+					} else if len(files) > 0 {
+						prev.Value = value
+					}
+				} else {
+					metaValue = &MetaValue{Name: name, Value: value, Meta: metaorsMap[name]}
+				}
 			} else if matches := isNextLevel.FindStringSubmatch(key); len(matches) > 0 {
 				name := matches[1]
 				if _, ok := convertedNextLevel[name]; !ok {
@@ -102,7 +122,7 @@ func ConvertFormToMetaValues(request *http.Request, metaors []Metaor, prefix str
 						metaors = metaor.GetMetas()
 					}
 
-					if children, err := ConvertFormToMetaValues(request, metaors, prefix+name+"."); err == nil {
+					if children, err := ConvertFormDataToMetaValues(form, multipartForm, metaors, prefix+name+"."); err == nil {
 						nestedName := prefix + matches[2]
 						if _, ok := nestedStructIndex[nestedName]; ok {
 							nestedStructIndex[nestedName]++
@@ -121,28 +141,33 @@ func ConvertFormToMetaValues(request *http.Request, metaors []Metaor, prefix str
 	}
 
 	var sortedFormKeys []string
-	for key := range request.Form {
+	for key := range form {
 		sortedFormKeys = append(sortedFormKeys, key)
 	}
 
 	utils.SortFormKeys(sortedFormKeys)
 
 	for _, key := range sortedFormKeys {
-		newMetaValue(key, request.Form[key])
+		newMetaValue(key, form[key])
 	}
 
-	if request.MultipartForm != nil {
+	if multipartForm != nil {
 		sortedFormKeys = []string{}
-		for key := range request.MultipartForm.File {
+		for key := range multipartForm.File {
 			sortedFormKeys = append(sortedFormKeys, key)
 		}
 		utils.SortFormKeys(sortedFormKeys)
 
 		for _, key := range sortedFormKeys {
-			newMetaValue(key, request.MultipartForm.File[key])
+			newMetaValue(key, multipartForm.File[key])
 		}
 	}
 	return metaValues, nil
+}
+
+// ConvertFormToMetaValues convert form to meta values
+func ConvertFormToMetaValues(request *http.Request, metaors []Metaor, prefix string) (*MetaValues, error) {
+	return ConvertFormDataToMetaValues(request.Form, request.MultipartForm, metaors, prefix)
 }
 
 // Decode decode context to result according to resource definition
@@ -160,6 +185,8 @@ func Decode(context *qor.Context, result interface{}, res Resourcer) error {
 	}
 
 	errors.AddError(err)
-	errors.AddError(DecodeToResource(res, result, metaValues, context).Start())
+	processor := DecodeToResource(res, result, metaValues, context)
+	err = processor.Start()
+	errors.AddError(err)
 	return errors
 }

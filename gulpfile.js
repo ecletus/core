@@ -67,7 +67,7 @@ function adminTasks() {
       .src([scripts.qorInit, scripts.qorCommon, scripts.qor])
       .pipe(plumber())
       .pipe(plugins.concat('qor.js'))
-      .pipe(plugins.uglify())
+      //.pipe(plugins.uglify())
       .pipe(gulp.dest(scripts.dest));
   });
 

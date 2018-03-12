@@ -14,7 +14,7 @@ import (
 // ToPrimaryQueryParams to primary query params
 func (res *Resource) ToPrimaryQueryParams(primaryValue string, context *qor.Context) (string, []interface{}) {
 	if primaryValue != "" {
-		scope := context.GetDB().NewScope(res.Value)
+		scope := context.DB.NewScope(res.Value)
 
 		// multiple primary fields
 		if len(res.PrimaryFields) > 1 {
@@ -49,7 +49,7 @@ func (res *Resource) ToPrimaryQueryParamsFromMetaValue(metaValues *MetaValues, c
 	var (
 		sqls          []string
 		primaryValues []interface{}
-		scope         = context.GetDB().NewScope(res.Value)
+		scope         = context.DB.NewScope(res.Value)
 	)
 
 	if metaValues != nil {
@@ -64,7 +64,7 @@ func (res *Resource) ToPrimaryQueryParamsFromMetaValue(metaValues *MetaValues, c
 	return strings.Join(sqls, " AND "), primaryValues
 }
 
-func (res *Resource) findOneHandler(result interface{}, metaValues *MetaValues, context *qor.Context) error {
+func (res *Resource) findOneHandler(result interface{}, metaValues *MetaValues, context *qor.Context) (err error) {
 	if res.HasPermission(roles.Read, context) {
 		var (
 			primaryQuerySQL string
@@ -75,18 +75,32 @@ func (res *Resource) findOneHandler(result interface{}, metaValues *MetaValues, 
 			primaryQuerySQL, primaryParams = res.ToPrimaryQueryParams(context.ResourceID, context)
 		} else {
 			primaryQuerySQL, primaryParams = res.ToPrimaryQueryParamsFromMetaValue(metaValues, context)
+
+			if len(primaryParams) == 1 {
+				if s, ok := primaryParams[0].(string); ok {
+					if s == "" {
+						return nil
+					}
+				} else if s, ok := primaryParams[0].(int64); ok {
+					if s == 0 {
+						return nil
+					}
+				}
+			}
 		}
 
 		if primaryQuerySQL != "" {
-			if metaValues != nil {
+			if metaValues == nil {
+			} else {
 				if destroy := metaValues.Get("_destroy"); destroy != nil {
 					if fmt.Sprint(destroy.Value) != "0" && res.HasPermission(roles.Delete, context) {
-						context.GetDB().Delete(result, append([]interface{}{primaryQuerySQL}, primaryParams...)...)
+						context.DB.Delete(result, append([]interface{}{primaryQuerySQL}, primaryParams...)...)
 						return ErrProcessorSkipLeft
 					}
 				}
 			}
-			return context.GetDB().First(result, append([]interface{}{primaryQuerySQL}, primaryParams...)...).Error
+			err := context.DB.First(result, append([]interface{}{primaryQuerySQL}, primaryParams...)...).Error
+			return err
 		}
 
 		return errors.New("failed to find")
@@ -96,21 +110,21 @@ func (res *Resource) findOneHandler(result interface{}, metaValues *MetaValues, 
 
 func (res *Resource) findManyHandler(result interface{}, context *qor.Context) error {
 	if res.HasPermission(roles.Read, context) {
-		db := context.GetDB()
+		db := context.DB
 		if _, ok := db.Get("qor:getting_total_count"); ok {
-			return context.GetDB().Count(result).Error
+			return context.DB.Count(result).Error
 		}
-		return context.GetDB().Set("gorm:order_by_primary_key", "DESC").Find(result).Error
+		return context.DB.Set("gorm:order_by_primary_key", "DESC").Find(result).Error
 	}
 
 	return roles.ErrPermissionDenied
 }
 
 func (res *Resource) saveHandler(result interface{}, context *qor.Context) error {
-	if (context.GetDB().NewScope(result).PrimaryKeyZero() &&
+	if (context.DB.NewScope(result).PrimaryKeyZero() &&
 		res.HasPermission(roles.Create, context)) || // has create permission
 		res.HasPermission(roles.Update, context) { // has update permission
-		return context.GetDB().Save(result).Error
+		return context.DB.Save(result).Error
 	}
 	return roles.ErrPermissionDenied
 }
@@ -118,8 +132,8 @@ func (res *Resource) saveHandler(result interface{}, context *qor.Context) error
 func (res *Resource) deleteHandler(result interface{}, context *qor.Context) error {
 	if res.HasPermission(roles.Delete, context) {
 		if primaryQuerySQL, primaryParams := res.ToPrimaryQueryParams(context.ResourceID, context); primaryQuerySQL != "" {
-			if !context.GetDB().First(result, append([]interface{}{primaryQuerySQL}, primaryParams...)...).RecordNotFound() {
-				return context.GetDB().Delete(result).Error
+			if !context.DB.First(result, append([]interface{}{primaryQuerySQL}, primaryParams...)...).RecordNotFound() {
+				return context.DB.Delete(result).Error
 			}
 		}
 		return gorm.ErrRecordNotFound
@@ -135,6 +149,16 @@ func (res *Resource) CallFindOne(result interface{}, metaValues *MetaValues, con
 // CallFindMany call find many method
 func (res *Resource) CallFindMany(result interface{}, context *qor.Context) error {
 	return res.FindManyHandler(result, context)
+}
+
+// CallFindOne call find one method
+func (res *Resource) CallFindOneReadonly(result interface{}, metaValues *MetaValues, context *qor.Context) error {
+	return res.FindOneReadonlyHandler(result, metaValues, context)
+}
+
+// CallFindMany call find many method
+func (res *Resource) CallFindManyReadonly(result interface{}, context *qor.Context) error {
+	return res.FindManyReadonlyHandler(result, context)
 }
 
 // CallSave call save method
