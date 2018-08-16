@@ -1,14 +1,30 @@
 package config
 
 import (
+	"fmt"
+	"errors"
 	"strings"
-	"github.com/qor/qor/utils/str"
-	"github.com/qor/oss/ftp"
+	"github.com/aghape/aghape/utils/str"
+	"github.com/aghape/oss/ftp"
+	"github.com/moisespsena/go-assetfs"
 )
 
 type OtherConfig map[string]interface{}
 
+func NewOtherConfig(data ...map[string]interface{}) OtherConfig {
+	oc := make(OtherConfig)
+	for _, d := range data {
+		for k, v := range d {
+			oc.Set(k, v)
+		}
+	}
+	return oc
+}
+
 func (oc OtherConfig) Set(key string, value interface{}) OtherConfig {
+	if key == "" {
+		panic(errors.New("OtherConfig.Set: Key is empty"))
+	}
 	parts := strings.Split(key, ".")
 	end, parts := parts[len(parts)-1], parts[:len(parts)-1]
 	o := oc
@@ -25,6 +41,9 @@ func (oc OtherConfig) Set(key string, value interface{}) OtherConfig {
 }
 
 func (oc OtherConfig) Merge(key string, values ...map[string]interface{}) OtherConfig {
+	if key == "" {
+		panic(errors.New("OtherConfig.Merge: Key is empty"))
+	}
 	for _, value := range values {
 		for k, v := range value {
 			if vmap, ok := v.(map[string]interface{}); ok {
@@ -56,6 +75,9 @@ func (oc OtherConfig) GetMany(key string, createIfNil ...bool) (value OtherConfi
 }
 
 func (oc OtherConfig) Get(key string) (value interface{}, ok bool) {
+	if key == "" {
+		panic(errors.New("OtherConfig.Merge: Key is empty"))
+	}
 	parts := strings.Split(key, ".")
 	end, parts := parts[len(parts)-1], parts[:len(parts)-1]
 	o := oc
@@ -70,44 +92,79 @@ func (oc OtherConfig) Get(key string) (value interface{}, ok bool) {
 	return
 }
 
-func (oc OtherConfig) GetBool(key string) bool {
+func (oc OtherConfig) GetBool(key string, defaul ... bool) bool {
 	v, _ := oc.Get(key)
 	if v != nil {
 		return v.(bool)
 	}
+	if len(defaul) > 0 {
+		return defaul[0]
+	}
 	return false
 }
 
-func (oc OtherConfig) GetString(key string) string {
+func (oc OtherConfig) GetString(key string, defaul ...string) string {
 	v, _ := oc.Get(key)
 	if v != nil {
 		return v.(string)
 	}
+	if len(defaul) > 0 {
+		return defaul[0]
+	}
 	return ""
 }
 
-func (oc OtherConfig) GetInt(key string) int {
+func (oc OtherConfig) GetInt(key string, defaul ... int) int {
 	v, _ := oc.Get(key)
 	if v != nil {
 		return v.(int)
 	}
+	if len(defaul) > 0 {
+		return defaul[0]
+	}
 	return 0
 }
 
-func (oc OtherConfig) GetSlice(key string) (r []interface{}) {
+func (oc OtherConfig) GetSlice(key string, defaul ...[]interface{}) (r []interface{}) {
 	v, _ := oc.Get(key)
 	if v != nil {
 		return v.([]interface{})
 	}
+	if len(defaul) > 0 {
+		return defaul[0]
+	}
 	return
 }
 
-func (oc OtherConfig) GetStrings(key string) (r []string) {
+func (oc OtherConfig) GetStrings(key string, defaul ...[]string) (r []string) {
 	v, _ := oc.Get(key)
 	if v != nil {
 		return v.([]string)
 	}
+	if len(defaul) > 0 {
+		return defaul[0]
+	}
 	return
+}
+
+func (oc OtherConfig) GetInterface(key string, defaul ...interface{}) interface{} {
+	if v, ok := oc.Get(key); ok {
+		return v
+	}
+	if len(defaul) > 0 {
+		return defaul[0]
+	}
+	return nil
+}
+
+func (oc OtherConfig) GetAssetFS(key string, defaul ...interface{}) assetfs.Interface {
+	return oc.GetInterface(key, defaul...).(assetfs.Interface)
+}
+
+
+func (oc OtherConfig) On(key string, f func(ok bool, value interface{}) interface{}) interface{} {
+	v, ok := oc.Get(key)
+	return f(ok, v)
 }
 
 type SiteConfig struct {
@@ -159,6 +216,25 @@ type DBConfig struct {
 	Port     int
 	User     string
 	Password string
+	SSL      string
+}
+
+func (db *DBConfig) DSN() string {
+	switch db.Adapter {
+	case "mysql":
+		return fmt.Sprintf("%v:%v@tcp(%v:%v)/%v?parseTime=True&loc=Local",
+			db.User, db.Password, db.Host, db.Port, db.Name)
+	case "postgres":
+		ssl := db.SSL
+		if ssl == "" {
+			ssl = "disable"
+		}
+		return fmt.Sprintf("postgres://%v:%v@%v/%v?sslmode=%v",
+			db.User, db.Password, db.Host, db.Name, ssl)
+	case "sqlite":
+		return db.Name
+	}
+	return ""
 }
 
 type MediaStorageConfig struct {

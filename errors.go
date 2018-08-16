@@ -42,3 +42,4 @@ func (errs Errors) GetErrors() []error {
 type errorsInterface interface {
 	GetErrors() []error
 }
+

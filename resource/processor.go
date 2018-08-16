@@ -6,9 +6,9 @@ import (
 	"reflect"
 
 	"github.com/jinzhu/gorm"
-	"github.com/qor/qor"
-	"github.com/qor/qor/utils"
-	"github.com/qor/roles"
+	"github.com/aghape/aghape"
+	"github.com/aghape/aghape/utils"
+	"github.com/aghape/roles"
 )
 
 // ErrProcessorSkipLeft skip left processors error, if returned this error in validation, before callbacks, then qor will stop process following processors
@@ -44,7 +44,7 @@ func (processor *processor) checkSkipLeft(errs ...error) bool {
 }
 
 func (processor *processor) Initialize() error {
-	err := processor.Resource.CallFindOne(processor.Result, processor.MetaValues, processor.Context)
+	err := processor.Resource.FindOne(processor.Result, processor.MetaValues, processor.Context)
 	processor.checkSkipLeft(err)
 	return err
 }
@@ -91,12 +91,23 @@ func (processor *processor) decode() (errors []error) {
 				field := reflect.Indirect(reflect.ValueOf(processor.Result)).FieldByName(meta.GetFieldName())
 				if utils.ModelType(field.Addr().Interface()) == utils.ModelType(res.NewStruct(processor.Context.Site)) {
 					if _, ok := field.Addr().Interface().(sql.Scanner); !ok {
-						decodeMetaValuesToField(res, field, metaValue, processor.Context)
+						err := decodeMetaValuesToField(res, field, metaValue, processor.Context)
+						if err != nil {
+							errors = append(errors, err)
+							return
+						}
+						continue
 					}
 				}
 			}
-		} else if setter := meta.GetSetter(); setter != nil {
-			setter(processor.Result, metaValue, processor.Context)
+		}
+
+		if setter := meta.GetSetter(); setter != nil {
+			err := setter(processor.Result, metaValue, processor.Context)
+			if err != nil {
+				errors = append(errors, err)
+				return
+			}
 		}
 	}
 

@@ -3,14 +3,15 @@ package resource
 import (
 	"encoding/json"
 	"io"
+	"mime/multipart"
 	"net/http"
 	"net/url"
+	"reflect"
 	"regexp"
 	"strings"
-	"mime/multipart"
 
-	"github.com/qor/qor"
-	"github.com/qor/qor/utils"
+	"github.com/aghape/aghape"
+	"github.com/aghape/aghape/utils"
 )
 
 func convertMapToMetaValues(values map[string]interface{}, metaors []Metaor) (*MetaValues, error) {
@@ -77,7 +78,7 @@ var (
 )
 
 // ConvertFormToMetaValues convert form to meta values
-func ConvertFormDataToMetaValues(form url.Values, multipartForm *multipart.Form, metaors []Metaor, prefix string) (*MetaValues, error) {
+func ConvertFormDataToMetaValues(context *qor.Context, form url.Values, multipartForm *multipart.Form, metaors []Metaor, prefix string) (*MetaValues, error) {
 	metaValues := &MetaValues{}
 	metaorsMap := map[string]Metaor{}
 	convertedNextLevel := map[string]bool{}
@@ -86,7 +87,7 @@ func ConvertFormDataToMetaValues(form url.Values, multipartForm *multipart.Form,
 		metaorsMap[metaor.GetName()] = metaor
 	}
 
-	newMetaValue := func(key string, value interface{}) {
+	newMetaValue := func(key string, value interface{}) error {
 		if strings.HasPrefix(key, prefix) {
 			var metaValue *MetaValue
 			key = strings.TrimPrefix(key, prefix)
@@ -119,10 +120,10 @@ func ConvertFormDataToMetaValues(form url.Values, multipartForm *multipart.Form,
 					convertedNextLevel[name] = true
 					metaor := metaorsMap[matches[2]]
 					if metaor != nil {
-						metaors = metaor.GetMetas()
+						metaors = metaor.GetContextMetas(nil, context)
 					}
 
-					if children, err := ConvertFormDataToMetaValues(form, multipartForm, metaors, prefix+name+"."); err == nil {
+					if children, err := ConvertFormDataToMetaValues(context, form, multipartForm, metaors, prefix+name+"."); err == nil {
 						nestedName := prefix + matches[2]
 						if _, ok := nestedStructIndex[nestedName]; ok {
 							nestedStructIndex[nestedName]++
@@ -138,6 +139,7 @@ func ConvertFormDataToMetaValues(form url.Values, multipartForm *multipart.Form,
 				metaValues.Values = append(metaValues.Values, metaValue)
 			}
 		}
+		return nil
 	}
 
 	var sortedFormKeys []string
@@ -166,8 +168,8 @@ func ConvertFormDataToMetaValues(form url.Values, multipartForm *multipart.Form,
 }
 
 // ConvertFormToMetaValues convert form to meta values
-func ConvertFormToMetaValues(request *http.Request, metaors []Metaor, prefix string) (*MetaValues, error) {
-	return ConvertFormDataToMetaValues(request.Form, request.MultipartForm, metaors, prefix)
+func ConvertFormToMetaValues(context *qor.Context, request *http.Request, metaors []Metaor, prefix string) (*MetaValues, error) {
+	return ConvertFormDataToMetaValues(context, request.Form, request.MultipartForm, metaors, prefix)
 }
 
 // Decode decode context to result according to resource definition
@@ -175,18 +177,28 @@ func Decode(context *qor.Context, result interface{}, res Resourcer) error {
 	var errors qor.Errors
 	var err error
 	var metaValues *MetaValues
+
+	if parent := res.GetParentResource(); parent != nil {
+		parentId := context.ParentResourceID[parent.GetPathLevel()]
+		value := reflect.Indirect(reflect.ValueOf(result))
+		fieldName := res.GetParentFieldName()
+		f := value.FieldByName(fieldName)
+		f.Set(reflect.ValueOf(parentId))
+	}
+
 	metaors := res.GetMetas([]string{})
 
 	if strings.Contains(context.Request.Header.Get("Content-Type"), "json") {
 		metaValues, err = ConvertJSONToMetaValues(context.Request.Body, metaors)
 		context.Request.Body.Close()
 	} else {
-		metaValues, err = ConvertFormToMetaValues(context.Request, metaors, "QorResource.")
+		metaValues, err = ConvertFormToMetaValues(context, context.Request, metaors, "QorResource.")
 	}
 
 	errors.AddError(err)
 	processor := DecodeToResource(res, result, metaValues, context)
 	err = processor.Start()
 	errors.AddError(err)
+
 	return errors
 }

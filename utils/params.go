@@ -1,7 +1,6 @@
 package utils
 
 import (
-	"net/url"
 	"path"
 	"regexp"
 	"strings"
@@ -36,11 +35,64 @@ func match(s string, f func(byte) bool, i int) (matched string, next byte, j int
 	return s[i:j], next, j
 }
 
+type PathValue struct {
+	Index int
+	Value string
+}
+
+type PathValues struct {
+	Keys   []string
+	Values []*PathValue
+	Map    map[string][]*PathValue
+	Size   int
+}
+
+func (p *PathValues) Get(key string) *PathValue {
+	values, ok := p.Map[key]
+	if ok {
+		return values[len(values)-1]
+	}
+	return nil
+}
+
+func (p *PathValues) GetString(key string) (value string, ok bool) {
+	v := p.Get(key)
+	if v != nil {
+		value, ok = v.Value, true
+	}
+	return
+}
+
+func (p *PathValues) Add(key, value string) {
+	_, ok := p.Map[key]
+	v := &PathValue{len(p.Values), value}
+	p.Values = append(p.Values, v)
+	p.Size++
+	if ok {
+		p.Map[key] = append(p.Map[key], v)
+	} else {
+		p.Map[key] = []*PathValue{v}
+		p.Keys = append(p.Keys, key)
+	}
+}
+
+func (p *PathValues) Dict() map[string][]string {
+	m := make(map[string][]string)
+	for k, items := range p.Map {
+		var data []string
+		for _, v := range items {
+			data = append(data, v.Value)
+		}
+		m[k] = data
+	}
+	return m
+}
+
 // ParamsMatch match string by param
-func ParamsMatch(source string, pth string) (url.Values, string, bool) {
+func ParamsMatch(source string, pth string) (*PathValues, string, bool) {
 	var (
 		i, j int
-		p    = make(url.Values)
+		p    = &PathValues{Map: make(map[string][]*PathValue)}
 		ext  = path.Ext(pth)
 	)
 

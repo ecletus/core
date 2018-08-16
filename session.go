@@ -1,7 +1,7 @@
 package qor
 
 import (
-	"github.com/qor/session"
+	"github.com/aghape/session"
 )
 
 const sessionManagerKey = "qor:session_manager"

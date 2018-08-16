@@ -31,14 +31,36 @@ func (d *ContextData) Set(key, value interface{}, pairs ... interface{}) *Contex
 }
 
 func (d *ContextData) Get(key interface{}) interface{} {
+	v, _ := d.GetOk(key)
+	return v
+}
+
+func (d *ContextData) GetInterface(key interface{}) interface{} {
+	v, _ := d.GetOk(key)
+	return v
+}
+
+func (d *ContextData) GetString(key interface{}) string {
+	if v, ok := d.GetOk(key); ok {
+		return v.(string)
+	}
+	return ""
+}
+
+func (d *ContextData) GetOk(key interface{}) (interface{}, bool) {
 	node := d.Current
 	for node != nil {
 		if v, ok := node.Data[key]; ok {
-			return v
+			return v, true
 		}
 		node = node.Parent
 	}
-	return nil
+	return nil, false
+}
+
+func (d *ContextData) GetCallback(key interface{}, cb func(v interface{}, ok bool) interface{}) interface{} {
+	v, ok := d.GetOk(key)
+	return cb(v, ok)
 }
 
 func (d *ContextData) SetDB(dbname string, db *gorm.DB) *ContextData {

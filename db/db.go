@@ -7,7 +7,12 @@ import (
 	"github.com/jinzhu/gorm"
 	"sync"
 	"reflect"
-	qorconfig "github.com/qor/qor/config"
+	"context"
+	"os/exec"
+	"time"
+	"io"
+	"bufio"
+	qorconfig "github.com/aghape/aghape/config"
 	_ "github.com/jinzhu/gorm/dialects/mysql"
 	_ "github.com/jinzhu/gorm/dialects/postgres"
 	_ "github.com/jinzhu/gorm/dialects/sqlite"
@@ -15,8 +20,61 @@ import (
 
 var FakeDB = &gorm.DB{}
 
+type RawDBConnection interface {
+	io.Closer
+	Error() *bufio.Reader
+	Out() *bufio.Reader
+	In() io.Writer
+}
+
+type CmdDBConnection struct {
+	Cmd *exec.Cmd
+	in  io.Writer
+	err *bufio.Reader
+	out *bufio.Reader
+}
+
+func NewCmdDBConnection(cmd *exec.Cmd) *CmdDBConnection {
+	in, _ := cmd.StdinPipe()
+	o, _ := cmd.StdoutPipe()
+	cmd.Stderr = os.Stderr
+	return &CmdDBConnection{cmd, in, nil, bufio.NewReader(o)}
+}
+
+func (c *CmdDBConnection) Error() *bufio.Reader {
+	return c.err
+}
+func (c *CmdDBConnection) Out() *bufio.Reader {
+	return c.out
+}
+
+func (c *CmdDBConnection) In() io.Writer {
+	return c.in
+}
+
+func (c *CmdDBConnection) Close() error {
+	if c.Cmd.ProcessState == nil {
+		_, err := c.In().Write([]byte("\\q\\n"))
+		if err != nil {
+			return err
+		} else {
+			<-time.After(time.Second)
+			return c.Cmd.Process.Kill()
+		}
+	}
+	if c.Cmd.ProcessState.Exited() {
+		if c.Cmd.ProcessState.Success() {
+			return nil
+		}
+		return errors.New(c.Cmd.ProcessState.String())
+	}
+	return nil
+}
+
 type Factory func(config *qorconfig.DBConfig) (db *gorm.DB, err error)
+type RawFactory func(ctx context.Context, config *qorconfig.DBConfig) (db RawDBConnection, err error)
 type Factories map[string]Factory
+type RawFactories map[string]RawFactory
 
 func (f Factories) Register(adapterName string, factory Factory) {
 	f[adapterName] = factory
@@ -39,18 +97,44 @@ func (f Factories) Factory(config *qorconfig.DBConfig) (db *gorm.DB, err error) 
 
 var SystemFactories = Factories{
 	"mysql": func(config *qorconfig.DBConfig) (db *gorm.DB, err error) {
-		return gorm.Open("mysql", fmt.Sprintf("%v:%v@tcp(%v:%v)/%v?parseTime=True&loc=Local",
-			config.User, config.Password, config.Host, config.Port, config.Name))
+		return gorm.Open("mysql", config.DSN())
 	},
 	"postgres": func(config *qorconfig.DBConfig) (db *gorm.DB, err error) {
-		return gorm.Open("postgres", fmt.Sprintf("postgres://%v:%v@%v/%v?sslmode=disable",
-			config.User, config.Password, config.Host, config.Name))
+		return gorm.Open("postgres", config.DSN())
 	},
 	"sqlite": func(config *qorconfig.DBConfig) (db *gorm.DB, err error) {
-		return gorm.Open("sqlite3", fmt.Sprintf("%v/%v", os.TempDir(), config.Name))
+		return gorm.Open("sqlite3", config.DSN())
 	},
 }
 
+var SystemRawFactories = RawFactories{
+	"postgres": func(ctx context.Context, config *qorconfig.DBConfig) (db RawDBConnection, err error) {
+		var cmd *exec.Cmd
+		if ctx == nil {
+			cmd = exec.Command("psql")
+		} else {
+			cmd = exec.CommandContext(ctx, "psql")
+		}
+		cmd.Env = os.Environ()
+		cmd.Env = append(cmd.Env,
+			fmt.Sprintf("PGUSER=%v", config.User),
+			fmt.Sprintf("PGPASS=%v", config.Password),
+			fmt.Sprintf("PGDATABASE=%v", config.Name))
+		if config.Host != "" {
+			cmd.Env = append(cmd.Env, fmt.Sprintf("PGHOST=%v", config.Host))
+		}
+		if config.Port != 0 {
+			cmd.Env = append(cmd.Env, fmt.Sprintf("PGPORT=%v", config.Port))
+		}
+
+		con := NewCmdDBConnection(cmd)
+		err = cmd.Start()
+		if err != nil {
+			return nil, err
+		}
+		return con, nil
+	},
+}
 
 type FieldCacher struct {
 	data sync.Map

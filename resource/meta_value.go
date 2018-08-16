@@ -3,7 +3,7 @@ package resource
 import (
 	"reflect"
 
-	"github.com/qor/qor"
+	"github.com/aghape/aghape"
 )
 
 // MetaValues is slice of MetaValue
@@ -37,13 +37,26 @@ type MetaValue struct {
 	error      error
 }
 
-func decodeMetaValuesToField(res Resourcer, field reflect.Value, metaValue *MetaValue, context *qor.Context) {
-	if field.Kind() == reflect.Struct {
-		value := reflect.New(field.Type())
+func decodeMetaValuesToField(res Resourcer, field reflect.Value, metaValue *MetaValue, context *qor.Context) (err error) {
+	//if field.Kind() == reflect.Struct {
+	if metaValue.Meta.IsInline() {
+		typ := field.Type()
+		isPtr := typ.Kind() == reflect.Ptr
+		if isPtr {
+			typ = typ.Elem()
+		}
+		value := reflect.New(typ)
 		associationProcessor := DecodeToResource(res, value.Interface(), metaValue.MetaValues, context)
-		associationProcessor.Start()
+		err = associationProcessor.Start()
+		if err != nil {
+			return
+		}
 		if !associationProcessor.SkipLeft {
-			field.Set(value.Elem())
+			if isPtr {
+				field.Set(value)
+			} else {
+				field.Set(value.Elem())
+			}
 		}
 	} else if field.Kind() == reflect.Slice {
 		if metaValue.Index == 0 {
@@ -59,7 +72,10 @@ func decodeMetaValuesToField(res Resourcer, field reflect.Value, metaValue *Meta
 
 		value := reflect.New(fieldType)
 		associationProcessor := DecodeToResource(res, value.Interface(), metaValue.MetaValues, context)
-		associationProcessor.Start()
+		err = associationProcessor.Start()
+		if err != nil {
+			return
+		}
 		if !associationProcessor.SkipLeft {
 			if !reflect.DeepEqual(reflect.Zero(fieldType).Interface(), value.Elem().Interface()) {
 				if isPtr {
@@ -70,4 +86,5 @@ func decodeMetaValuesToField(res Resourcer, field reflect.Value, metaValue *Meta
 			}
 		}
 	}
+	return
 }

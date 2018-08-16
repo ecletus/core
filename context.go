@@ -1,44 +1,32 @@
 package qor
 
 import (
+	"context"
+	"fmt"
 	"net/http"
 	"net/url"
 	"os"
 	"strings"
 	"time"
-	"context"
 
-	"github.com/moisespsena/template/html/template"
-	"github.com/moisespsena/go-i18n-modular/i18nmod"
-	"github.com/moisespsena/go-i18n-modular/i18nmod/backends/yaml"
 	"github.com/jinzhu/gorm"
-	"github.com/qor/qor/contextdata"
-	"github.com/qor/qor/utils/uri"
-	uurl "github.com/qor/qor/utils/url"
-	"github.com/qor/qor/config"
+	"github.com/moisespsena/go-i18n-modular/i18nmod"
+	"github.com/moisespsena/go-route"
+	"github.com/moisespsena/template/html/template"
+	"github.com/aghape/common"
+	"github.com/aghape/aghape/config"
+	"github.com/aghape/aghape/contextdata"
+	"github.com/aghape/aghape/utils/uri"
+	uurl "github.com/aghape/aghape/utils/url"
 )
 
-// CurrentUser is an interface, which is used for qor admin to get current logged user
-type CurrentUser interface {
-	DisplayName() string
-	GetID() string
-}
-
-const CONTEXT_KEY = "qor:context"
+var CONTEXT_KEY = PREFIX
 
 var (
-	YAMLTranslatorBackend *yaml.Backend
-	Translator            = i18nmod.NewTranslator()
-	DefaultLocale         string
+	DefaultLocale string
 )
 
 func init() {
-	if _, err := os.Stat("config/locales"); err == nil {
-		YAMLTranslatorBackend = yaml.New()
-		YAMLTranslatorBackend.LoadDir("config/locales")
-		Translator.AddBackend(YAMLTranslatorBackend)
-	}
-
 	lang := os.Getenv("LANG")
 
 	if len(lang) >= 5 {
@@ -46,38 +34,84 @@ func init() {
 	}
 }
 
+type i18nGroup struct {
+	Prev  *i18nGroup
+	Value string
+}
+
 // Context qor context, which is used for many qor components, used to share information between them
 type Context struct {
-	Parent      *Context
-	CurrentUser CurrentUser
-	Request     *http.Request
-	Writer      http.ResponseWriter
-	Roles       []string
-	ResourceID  string
+	Parent           *Context
+	CurrentUser      common.User
+	Request          *http.Request
+	Writer           http.ResponseWriter
+	Roles            []string
+	ResourceID       string
+	ParentResourceID []string
 	Errors
 
-	DB           *gorm.DB
-	Config       *config.Config
-	I18nContext  i18nmod.Context
-	Locale       string
-	Prefix       string
-	StaticURL    string
-	data         *contextdata.ContextData
-	top          *Context
-	isTop        bool
-	Site         SiteInterface
-	OriginalURL  *url.URL
+	DB             *gorm.DB
+	Config         *config.Config
+	I18nContext    i18nmod.Context
+	Locale         string
+	Prefix         string
+	StaticURL      string
+	data           *contextdata.ContextData
+	top            *Context
+	isTop          bool
+	Site           SiteInterface
+	OriginalURL    *url.URL
+	breadcrumbs    *Breadcrumbs
+	RouteContext   *route.RouteContext
+	Translator     *i18nmod.Translator
+	ContextFactory *ContextFactory
+	I18nGroupStack *i18nGroup
+}
+
+func (context *Context) Breadcrumbs() *Breadcrumbs {
+	if context.breadcrumbs == nil {
+		context.breadcrumbs = &Breadcrumbs{}
+	}
+	return context.breadcrumbs
+}
+
+func (context *Context) PushI18nGroup(group string) {
+	context.I18nGroupStack = &i18nGroup{context.I18nGroupStack, group}
+}
+
+func (context *Context) PopI18nGroup() {
+	context.I18nGroupStack = context.I18nGroupStack.Prev
+}
+
+func (context *Context) URLParams() *route.OrderedMap {
+	return context.RouteContext.URLParams
+}
+
+func (context *Context) URLParam(key string) string {
+	return context.RouteContext.URLParam(key)
+}
+
+func (context *Context) SetRequest(r *http.Request) {
+	context.Request = r
 }
 
 func (context *Context) Data() *contextdata.ContextData {
 	if context.data == nil {
-		context.Request, context.data = contextdata.GetOrSetRequestContextData(context.Request)
+		if context.Request != nil {
+			context.Request, context.data = contextdata.GetOrSetRequestContextData(context.Request)
+		} else {
+			context.data = contextdata.NewRequestContextData()
+		}
 	}
 	return context.data
 }
 
 func (context *Context) Path() string {
 	return context.Request.URL.Path
+}
+
+func (context *Context) GlobalPath() string {
+	return context.GenGlobalURL(context.Request.URL.Path)
 }
 
 // PatchCurrentURL is a convinent wrapper for qor/utils.PatchURL
@@ -144,9 +178,9 @@ func (context *Context) GetI18nContext() i18nmod.Context {
 		locale := context.GetLocale()
 
 		if locale == DefaultLocale {
-			context.I18nContext = Translator.NewContext(locale)
+			context.I18nContext = context.Translator.NewContext(locale)
 		} else {
-			context.I18nContext = Translator.NewContext(locale, DefaultLocale)
+			context.I18nContext = context.Translator.NewContext(locale, DefaultLocale)
 		}
 
 	}
@@ -157,19 +191,25 @@ func (context *Context) I18nT(key string) *i18nmod.T {
 	return context.GetI18nContext().T(key)
 }
 
-func (context *Context) T(key string, defaul ... string) template.HTML {
+func (context *Context) T(key string, defaul ...string) template.HTML {
 	return template.HTML(context.Ts(key, defaul...))
 }
 
-func (context *Context) TT(key string, data interface{}, defaul ... string) template.HTML {
+func (context *Context) TT(key string, data interface{}, defaul ...string) template.HTML {
 	return template.HTML(context.TTs(key, data, defaul...))
 }
 
-func (context *Context) Ts(key string, defaul ... string) string {
+func (context *Context) Ts(key string, defaul ...string) string {
+	if key[0] == '.' {
+		key = context.I18nGroupStack.Value + key
+	}
 	return context.I18nT(key).DefaultArgs(defaul...).Get()
 }
 
-func (context *Context) TTs(key string, data interface{}, defaul ... string) string {
+func (context *Context) TTs(key string, data interface{}, defaul ...string) string {
+	if key[0] == '.' {
+		key = context.I18nGroupStack.Value + key
+	}
 	return context.GetI18nContext().TT(key).DefaultArgs(defaul...).Data(data).Get()
 }
 
@@ -179,7 +219,37 @@ func (context *Context) Clone() *Context {
 	return &clone
 }
 
+// Clone clone current context
+func (context *Context) CloneBasic() *Context {
+	return &Context{
+		Request:     context.Request,
+		Writer:      context.Writer,
+		StaticURL:   context.StaticURL,
+		Prefix:      context.Prefix,
+		OriginalURL: context.OriginalURL,
+		data:        context.data,
+		DB:          context.DB,
+		Site:        context.Site,
+		Parent:      context.Parent,
+		CurrentUser: context.CurrentUser,
+		Locale:      context.Locale,
+		I18nContext: context.I18nContext,
+		Translator:  context.Translator,
+	}
+}
+
 func (context *Context) Top() *Context {
+	if context.top != nil {
+		return context.top
+	}
+	if context.Parent != nil && !context.isTop {
+		context.top = context.Parent.Top()
+		return context.top
+	}
+	return context
+}
+
+func (context *Context) AsTop() *Context {
 	context.isTop = true
 	return context
 }
@@ -201,7 +271,7 @@ func (context *Context) GetStaticURL() string {
 	return prefix
 }
 
-func (context *Context) GenStaticURL(path ... string) string {
+func (context *Context) GenStaticURL(path ...string) string {
 	path = uri.Clean(path)
 	prefix := context.GetStaticURL()
 
@@ -221,7 +291,7 @@ func (context *Context) GenStaticURL(path ... string) string {
 	return uri.Join(append([]string{prefix}, path...)...)
 }
 
-func (context *Context) GenURL(path ... string) string {
+func (context *Context) GenURL(path ...string) string {
 	path = uri.Clean(path)
 	prefix := context.Prefix
 
@@ -240,15 +310,15 @@ func (context *Context) GenURL(path ... string) string {
 	return uri.Join(append([]string{prefix}, path...)...)
 }
 
-func (context *Context) GenGlobalStaticURL(path ... string) string {
-	return context.GetTop().GenStaticURL(path...)
+func (context *Context) GenGlobalStaticURL(path ...string) string {
+	return context.Top().GenStaticURL(path...)
 }
 
-func (context *Context) GenGlobalURL(path ... string) string {
-	return context.GetTop().GenURL(path...)
+func (context *Context) GenGlobalURL(path ...string) string {
+	return context.Top().GenURL(path...)
 }
 
-func (context *Context) JoinPath(path ... string) string {
+func (context *Context) JoinPath(path ...string) string {
 	if len(path) == 0 {
 		return ""
 	}
@@ -260,17 +330,6 @@ func (context *Context) JoinPath(path ... string) string {
 	return uri.Join(append(parts, path...)...)
 }
 
-func (context *Context) GetTop() *Context {
-	if context.top != nil {
-		return context.top
-	}
-	if context.Parent != nil && !context.isTop {
-		context.top = context.Parent.GetTop()
-		return context.top
-	}
-	return context
-}
-
 func (context *Context) Root() *Context {
 	c := context
 	for c.Parent != nil {
@@ -279,9 +338,9 @@ func (context *Context) Root() *Context {
 	return c
 }
 
-func (context *Context) NewChild(r *http.Request, prefix ... string) (*http.Request, *Context) {
+func (context *Context) NewChild(r *http.Request, prefix ...string) (*http.Request, *Context) {
 	var path string
-	if len(prefix) > 0 {
+	if len(prefix) > 0 && prefix[0] != "" {
 		path = "/" + strings.Trim(prefix[0], "/")
 	}
 
@@ -290,20 +349,24 @@ func (context *Context) NewChild(r *http.Request, prefix ... string) (*http.Requ
 	child.Parent = context
 
 	if path != "" {
-		if child.StaticURL == child.Prefix {
-			child.StaticURL += path
-		}
+		child.StaticURL += path
 		child.Prefix += path
-		nurl := *r.URL
-		nurl2 := &nurl
-		nurl2.Path = strings.TrimPrefix(r.URL.Path, path)
-		var err error
-		r.URL, err = url.Parse(nurl2.String())
-		if err != nil {
-			panic(err)
+		if r == nil {
+			r = context.Request
 		}
+		if r != nil {
+			nurl := *r.URL
+			nurl2 := &nurl
+			nurl2.Path = strings.TrimPrefix(r.URL.Path, path)
+			var err error
+			r.URL, err = url.Parse(nurl2.String())
+			if err != nil {
+				panic(err)
+			}
+		}
+	} else if r != nil {
+		child.Request = r
 	}
-	child.Request = r
 	return r, child
 }
 
@@ -311,11 +374,25 @@ func (context *Context) GetDB() *gorm.DB {
 	return context.DB
 }
 
-func (context *Context) SetDB(db *gorm.DB)  {
+func (context *Context) SetDB(db *gorm.DB) {
+	if db != nil {
+		db = db.Set(CONTEXT_KEY, context)
+	}
 	context.DB = db
 }
 
-func stringOrDefault(value interface{}, defaul ... string) string {
+func (context *Context) Htmlify(value interface{}) template.HTML {
+	switch vt := value.(type) {
+	case interface{ Htmlify() template.HTML }:
+		return vt.Htmlify()
+	case interface{ Htmlify(*Context) template.HTML }:
+		return vt.Htmlify(context)
+	default:
+		return template.HTML(fmt.Sprint(vt))
+	}
+}
+
+func stringOrDefault(value interface{}, defaul ...string) string {
 	if str, ok := value.(string); ok {
 		return str
 	}
@@ -325,21 +402,27 @@ func stringOrDefault(value interface{}, defaul ... string) string {
 	return ""
 }
 
-func NewContextForRequest(req *http.Request, prefix ... string) (*http.Request, *Context) {
+func NewContextForRequest(req *http.Request, prefix ...string) (*http.Request, *Context) {
 	rctx := req.Context()
+	URL := route.GetOriginalUrl(req)
+	if URL == nil {
+		urlCopy := *req.URL
+		URL = &urlCopy
+	}
 	parent := ContextFromRequest(req)
 
 	var ctx *Context
 
 	if parent == nil {
 		ctx = &Context{
-			Config:    config.NewConfig(),
-			Request:   req,
-			OriginalURL: req.URL,
-			Prefix:    stringOrDefault(rctx.Value("PREFIX")),
-			StaticURL: stringOrDefault(rctx.Value("STATIC_URL"))}
-		ctx.Top()
-		if len(prefix) > 0 {
+			Config:      config.NewConfig(),
+			Request:     req,
+			OriginalURL: URL,
+			Prefix:      stringOrDefault(rctx.Value("PREFIX")),
+			StaticURL:   stringOrDefault(rctx.Value("STATIC_URL")),
+		}
+		ctx.AsTop()
+		if len(prefix) > 0 && prefix[0] != "" {
 			req, ctx = ctx.NewChild(req, prefix...)
 		}
 	} else {
@@ -347,11 +430,14 @@ func NewContextForRequest(req *http.Request, prefix ... string) (*http.Request, 
 	}
 
 	req = req.WithContext(context.WithValue(req.Context(), CONTEXT_KEY, ctx))
+	if ctx.RouteContext == nil {
+		req, ctx.RouteContext = route.GetOrNewRouteContextForRequest(req)
+	}
 	ctx.Request = req
 	return req, ctx
 }
 
-func NewContextFromRequestPair(w http.ResponseWriter, r *http.Request, prefix ... string) (*http.Request, *Context) {
+func NewContextFromRequestPair(w http.ResponseWriter, r *http.Request, prefix ...string) (*http.Request, *Context) {
 	r, ctx := NewContextForRequest(r, prefix...)
 	ctx.Writer = w
 	return r, ctx
@@ -365,15 +451,19 @@ func ContextFromRequest(req *http.Request) (ctx *Context) {
 	return
 }
 
-func ContextFromDB(db *gorm.DB) (*Context) {
+func ContextFromDB(db *gorm.DB) *Context {
 	v, _ := db.Get(CONTEXT_KEY)
 	return v.(*Context)
 }
 
-func GetOrNewContextFromRequestPair(w http.ResponseWriter, r *http.Request) (*http.Request, *Context) {
-	ctx := ContextFromRequest(r)
-	if ctx == nil {
-		r, ctx = NewContextFromRequestPair(w, r)
+func ContexFromRouteContext(rctx *route.RouteContext) *Context {
+	v, ok := rctx.Data[CONTEXT_KEY]
+	if ok {
+		return v.(*Context)
 	}
-	return r, ctx
+	return nil
+}
+
+func ContexFromChain(chain *route.ChainHandler) *Context {
+	return ContexFromRouteContext(chain.Context)
 }

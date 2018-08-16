@@ -1,5 +1,8 @@
 package qor
 
-import "github.com/jinzhu/gorm"
+import (
+	"github.com/jinzhu/gorm"
+	_ "github.com/jinzhu/gorm/dialects/postgres"
+)
 
-var FakeDB = &gorm.DB{}
+var FakeDB = gorm.FakeDB("postgres")

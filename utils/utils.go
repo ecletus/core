@@ -20,7 +20,8 @@ import (
 	"github.com/jinzhu/gorm"
 	"github.com/jinzhu/now"
 	"github.com/microcosm-cc/bluemonday"
-	"github.com/qor/qor"
+	"github.com/aghape/aghape"
+	"github.com/aghape/helpers"
 
 	"strings"
 	"github.com/moisespsena/template/html/template"
@@ -50,7 +51,28 @@ func init() {
 		DefaultLocale = strings.Replace(strings.Split(lang, ".")[0], "_", "-", 1)
 	}
 }
-
+// HumanizeString Humanize separates string based on capitalizd letters
+// e.g. "order_item-data" -> "OrderItemData"
+func NamifyString(s string) string {
+	var human []rune
+	var toUpper bool
+	s = "_" + s
+	for _, c := range s {
+		if c == '_' || c == '-' {
+			toUpper = true
+			continue
+		} else if c == '!' {
+			toUpper = true
+		} else if toUpper {
+			toUpper = false
+			if c >= 'a' && c <= 'z' {
+				c -= 'a' - 'A'
+			}
+		}
+		human = append(human, c)
+	}
+	return string(human)
+}
 // HumanizeString Humanize separates string based on capitalizd letters
 // e.g. "OrderItem" -> "Order Item"
 func HumanizeString(str string) string {
@@ -101,6 +123,9 @@ func SetCookie(cookie http.Cookie, context *qor.Context) {
 
 // Stringify stringify any data, if it is a struct, will try to use its Name, Title, Code field, else will use its primary key
 func Stringify(object interface{}) string {
+	if helpers.IsNilInterface(object) {
+		return ""
+	}
 	if obj, ok := object.(interface {
 		Stringify() string
 	}); ok {
@@ -110,13 +135,16 @@ func Stringify(object interface{}) string {
 	scope := gorm.Scope{Value: object}
 	for _, column := range []string{"Name", "Title", "Code"} {
 		if field, ok := scope.FieldByName(column); ok {
-			result := field.Field.Interface()
-			if valuer, ok := result.(driver.Valuer); ok {
-				if result, err := valuer.Value(); err == nil {
-					return fmt.Sprint(result)
+			if field.Field.IsValid() {
+				result := field.Field.Interface()
+				if valuer, ok := result.(driver.Valuer); ok {
+					if result, err := valuer.Value(); err == nil {
+						return fmt.Sprint(result)
+					}
 				}
+				return fmt.Sprint(result)
 			}
-			return fmt.Sprint(result)
+			return ""
 		}
 	}
 

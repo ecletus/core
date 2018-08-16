@@ -42,16 +42,16 @@ var moduleName = (function() {
 
 function adminTasks() {
   var pathto = function(file) {
-    return '../admin/views/assets/' + file;
+    return '../admin/assets/static/' + file;
   };
   var scripts = {
     src: pathto('javascripts/app/*.js'),
     dest: pathto('javascripts'),
-    qor: pathto('javascripts/qor/*.js'),
-    qorInit: pathto('javascripts/qor/qor-config.js'),
-    qorCommon: pathto('javascripts/qor/qor-common.js'),
+    qor: pathto('javascripts/aghape/*.js'),
+    qorInit: pathto('javascripts/aghape/qor-config.js'),
+    qorCommon: pathto('javascripts/aghape/qor-common.js'),
     qorAdmin: [pathto('javascripts/qor.js'), pathto('javascripts/app.js')],
-    all: ['gulpfile.js', pathto('javascripts/qor/*.js')]
+    all: ['gulpfile.js', pathto('javascripts/aghape/*.js')]
   };
   var styles = {
     src: pathto('stylesheets/scss/{app,qor}.scss'),
@@ -174,15 +174,15 @@ function adminTasks() {
 // Watch Worker module: gulp --worker
 //
 // if module's assets just as normal path:
-// moduleName/views/themes/moduleName/assets/javascripts(stylesheets)
+// moduleName/assets/static/themes/moduleName/assets/javascripts(stylesheets)
 // just use gulp --worker
 //
 // if module's assets in enterprise as normal path:
-// moduleName/views/themes/moduleName/assets/javascripts(stylesheets)
+// moduleName/assets/static/themes/moduleName/assets/javascripts(stylesheets)
 // just use gulp --microsite--enterprise
 //
 // if module's assets path as Admin module:
-// moduleName/views/assets/javascripts(stylesheets)
+// moduleName/assets/static/javascripts(stylesheets)
 // you need set subModuleName as admin
 // gulp --worker--admin
 //
@@ -202,16 +202,16 @@ function moduleTasks(moduleNames) {
   var pathto = function(file) {
     if (moduleName && subModuleName) {
       if (subModuleName == 'admin') {
-        return '../' + moduleName + '/views/assets/' + file;
+        return '../' + moduleName + '/assets/static/' + file;
       } else if (subModuleName == 'enterprise') {
-        return '../../../enterprise.getqor.com/' + moduleName + '/views/themes/' + moduleName + '/assets/' + file;
+        return '../../../enterprise.getqor.com/' + moduleName + '/assets/static/themes/' + moduleName + '/' + file;
       } else if (useSubName) {
-        return '../' + moduleName + '/' + subModuleName + '/views/themes/' + subModuleName + '/assets/' + file;
+        return '../' + moduleName + '/' + subModuleName + '/assets/static/themes/' + subModuleName + '/' + file;
       } else {
-        return '../' + moduleName + '/' + subModuleName + '/views/themes/' + moduleName + '/assets/' + file;
+        return '../' + moduleName + '/' + subModuleName + '/assets/static/themes/' + moduleName + '/' + file;
       }
     }
-    return '../' + moduleName + '/views/themes/' + moduleName + '/assets/' + file;
+    return '../' + moduleName + '/assets/static/themes/' + moduleName + '/' + file;
   };
 
   var scripts = {
@@ -297,42 +297,42 @@ function moduleTasks(moduleNames) {
 // -----------------------------------------------------------------------------
 
 if (moduleName.name) {
-  var taskPath = moduleName.name + '/views/themes/' + moduleName.name + '/assets/';
+  var taskPath = moduleName.name + '/assets/static/themes/' + moduleName.name + '/';
   var runModuleName = 'Running "' + moduleName.name + '" module task in "' + taskPath + '"...';
 
   if (moduleName.subName) {
     if (moduleName.subName == 'admin') {
-      taskPath = moduleName.name + '/views/assets/';
+      taskPath = moduleName.name + '/assets/static/';
       runModuleName = 'Running "' + moduleName.name + '" module task in "' + taskPath + '"...';
     } else if (moduleName.subName == 'enterprise') {
-      taskPath = '../../../enterprise.getqor.com/' + moduleName.name + '/views/themes/' + moduleName.name + '/assets/';
+      taskPath = '../../../enterprise.getqor.com/' + moduleName.name + '/assets/static/themes/' + moduleName.name + '/';
       runModuleName = 'Running "' + moduleName.name + '" module task in "' + taskPath + '"...';
     } else if (moduleName.useSubName) {
-      taskPath = moduleName.name + '/' + moduleName.subName + '/views/themes/' + moduleName.subName + '/assets/';
+      taskPath = moduleName.name + '/' + moduleName.subName + '/assets/static/themes/' + moduleName.subName + '/';
       runModuleName = 'Running "' + moduleName.name + ' > ' + moduleName.subName + '" module task in "' + taskPath + '"...';
     } else {
-      taskPath = moduleName.name + '/' + moduleName.subName + '/views/themes/' + moduleName.name + '/assets/';
+      taskPath = moduleName.name + '/' + moduleName.subName + '/assets/static/themes/' + moduleName.name + '/';
       runModuleName = 'Running "' + moduleName.name + ' > ' + moduleName.subName + '" module task in "' + taskPath + '"...';
     }
   }
   console.log(runModuleName);
   moduleTasks(moduleName);
 } else {
-  console.log('Running "admin" module task in "admin/views/assets/"...');
+  console.log('Running "admin" module task in "admin/assets/static/"...');
   adminTasks();
 }
 
 // Task for compress js and css vendor assets
 gulp.task('combineJavaScriptVendor', function() {
   return gulp
-    .src(['!../admin/views/assets/javascripts/vendors/jquery.min.js', '../admin/views/assets/javascripts/vendors/*.js'])
+    .src(['!../admin/assets/static/javascripts/vendors/jquery.min.js', '../admin/assets/static/javascripts/vendors/*.js'])
     .pipe(plugins.concat('vendors.js'))
-    .pipe(gulp.dest('../admin/views/assets/javascripts'));
+    .pipe(gulp.dest('../admin/assets/static/javascripts'));
 });
 
 gulp.task('compressCSSVendor', function() {
   return gulp
-    .src('../admin/views/assets/stylesheets/vendors/*.css')
+    .src('../admin/assets/static/stylesheets/vendors/*.css')
     .pipe(plugins.concat('vendors.css'))
-    .pipe(gulp.dest('../admin/views/assets/stylesheets'));
+    .pipe(gulp.dest('../admin/assets/static/stylesheets'));
 });

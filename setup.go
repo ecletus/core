@@ -1,11 +1,12 @@
 package qor
 
 import (
-	"errors"
 	"os"
+	"path/filepath"
 
-	"github.com/gorilla/sessions"
 	"github.com/gorilla/securecookie"
+	"github.com/gorilla/sessions"
+	"github.com/aghape/aghape/contextdata"
 )
 
 type CookiStoreFactory func(context *Context, options *sessions.Options, codecs *CookieCodec) *sessions.CookieStore
@@ -17,6 +18,7 @@ type CookieCodec struct {
 type SetupOptions struct {
 	Home               string
 	Root               string
+	TempDir            string
 	Prefix             string
 	Production         bool
 	CookieStoreFactory CookiStoreFactory
@@ -27,6 +29,7 @@ type SetupOptions struct {
 type SetupConfig struct {
 	home               string
 	root               string
+	tempDir            string
 	prefix             string
 	production         bool
 	cookieStoreFactory CookiStoreFactory
@@ -50,37 +53,34 @@ func (c *SetupConfig) Root() string {
 	return c.root
 }
 
+func (c *SetupConfig) TempDir() string {
+	return c.tempDir
+}
+
 func (c *SetupConfig) Prefix() string {
 	return c.prefix
 }
-
-func CONFIG() *SetupConfig {
-	return setupConfig
+func (c *SetupConfig) CookieStoreFactory() CookiStoreFactory {
+	return c.cookieStoreFactory
 }
 
-func SetupCheck() *SetupConfig {
-	if setupConfig == nil {
-		panic(errors.New("qor is not initialized."))
-	}
-	return setupConfig
-}
-
-var setupConfig *SetupConfig
-
-func Setup(options SetupOptions) {
-	if setupConfig != nil {
-		panic("qor has be initialized.")
-	}
-
+func Setup(options SetupOptions) *SetupConfig {
 	if options.Root == "" {
 		options.Root = os.Getenv("ROOT")
+	}
+
+	if options.TempDir == "" {
+		options.TempDir = os.Getenv("TEMP_DIR")
+		if options.TempDir == "" {
+			options.TempDir = filepath.Join(options.Root, "tmp")
+		}
 	}
 
 	if options.Home == "" {
 		options.Home = os.Getenv("HOME")
 	}
 
-	setupConfig = &SetupConfig{options.Home, options.Root, options.Prefix,
+	setupConfig := &SetupConfig{options.Home, options.Root, options.TempDir, options.Prefix,
 		options.Production, options.CookieStoreFactory, options.CookieMaxAge,
 		options.CookieCodecs}
 
@@ -98,7 +98,7 @@ func Setup(options SetupOptions) {
 				options = &sessions.Options{}
 			}
 			if options.Path == "" {
-				options.Path = context.GetTop().Prefix
+				options.Path = context.Top().Prefix
 			}
 			if options.MaxAge == 0 {
 				options.MaxAge = setupConfig.cookieMaxAge
@@ -119,20 +119,34 @@ func Setup(options SetupOptions) {
 			return cs
 		}
 	}
+	return setupConfig
 }
 
-func IfDev(f func()) {
-	if SetupCheck(); setupConfig.IsDev() {
-		f()
+func (s *SetupConfig) IfDev(f func() error) error {
+	if s.IsDev() {
+		return f()
 	}
+	return nil
 }
 
-func IfProd(f func()) {
-	if SetupCheck(); setupConfig.IsProduction() {
-		f()
+func (s *SetupConfig) IfProd(f func() error) error {
+	if s.IsProduction() {
+		return f()
 	}
+	return nil
 }
+
+const SETUP_CONFIG = "qor:qor.setupConfig"
 
 func NewCookieStore(context *Context, options *sessions.Options, codecs *CookieCodec) *sessions.CookieStore {
-	return SetupCheck().cookieStoreFactory(context, options, codecs)
+	config := context.SetupConfig()
+	return config.cookieStoreFactory(context, options, codecs)
+}
+
+func (c *Context) SetupConfig() *SetupConfig {
+	return c.Data().Get(SETUP_CONFIG).(*SetupConfig)
+}
+
+func (c *Context) SetSetupConfig(s *SetupConfig) *contextdata.ContextData {
+	return c.Data().Set(SETUP_CONFIG, s)
 }
