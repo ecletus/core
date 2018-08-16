@@ -17,7 +17,7 @@ import (
 	"go4.org/sort"
 
 	"github.com/gosimple/slug"
-	"github.com/jinzhu/gorm"
+	"github.com/moisespsena-go/aorm"
 	"github.com/jinzhu/now"
 	"github.com/microcosm-cc/bluemonday"
 	"github.com/aghape/aghape"
@@ -99,7 +99,7 @@ var asicsiiRegexp = regexp.MustCompile("^(\\w|\\s|-|!)*$")
 // e.g. ToParamString -> to_param_string, To ParamString -> to_param_string
 func ToParamString(str string) string {
 	if asicsiiRegexp.MatchString(str) {
-		return gorm.ToDBName(strings.Replace(str, " ", "_", -1))
+		return aorm.ToDBName(strings.Replace(str, " ", "_", -1))
 	}
 	return slug.Make(str)
 }
@@ -132,7 +132,7 @@ func Stringify(object interface{}) string {
 		return obj.Stringify()
 	}
 
-	scope := gorm.Scope{Value: object}
+	scope := aorm.Scope{Value: object}
 	for _, column := range []string{"Name", "Title", "Code"} {
 		if field, ok := scope.FieldByName(column); ok {
 			if field.Field.IsValid() {

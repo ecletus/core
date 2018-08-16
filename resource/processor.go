@@ -5,7 +5,7 @@ import (
 	"errors"
 	"reflect"
 
-	"github.com/jinzhu/gorm"
+	"github.com/moisespsena-go/aorm"
 	"github.com/aghape/aghape"
 	"github.com/aghape/aghape/utils"
 	"github.com/aghape/roles"
@@ -25,7 +25,7 @@ type processor struct {
 
 // DecodeToResource decode meta values to resource result
 func DecodeToResource(res Resourcer, result interface{}, metaValues *MetaValues, context *qor.Context) *processor {
-	scope := &gorm.Scope{Value: result}
+	scope := &aorm.Scope{Value: result}
 	return &processor{Resource: res, Result: result, Context: context, MetaValues: metaValues, newRecord: scope.PrimaryKeyZero()}
 }
 

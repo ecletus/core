@@ -7,7 +7,7 @@ import (
 	"reflect"
 	"strings"
 
-	"github.com/jinzhu/gorm"
+	"github.com/moisespsena-go/aorm"
 	"github.com/jinzhu/inflection"
 	"github.com/moisespsena/go-edis"
 	"github.com/moisespsena/go-i18n-modular/i18nmod"
@@ -55,7 +55,7 @@ type Resourcer interface {
 	edis.EventDispatcherInterface
 	GetID() string
 	GetResource() *Resource
-	GetPrimaryFields() []*gorm.StructField
+	GetPrimaryFields() []*aorm.StructField
 	GetMetas([]string) []Metaor
 	FindMany(result interface{}, context *qor.Context) error
 	FindOne(result interface{}, metaValues *MetaValues, context *qor.Context) error
@@ -82,7 +82,7 @@ type Resourcer interface {
 	GetInlines() *Inlines
 	DBSave(resourcer Resourcer, result interface{}, context *qor.Context, parent *Parent) error
 	GetBeforeFindCallbacks() map[string]*Callback
-	GetFakeScope() *gorm.Scope
+	GetFakeScope() *aorm.Scope
 }
 
 // ConfigureResourceBeforeInitializeInterface if a struct implemented this interface, it will be called before everything when create a resource with the struct
@@ -207,7 +207,7 @@ type Resource struct {
 	PkgPath                   string
 	I18nPrefix                string
 	Value                     interface{}
-	PrimaryFields             []*gorm.StructField
+	PrimaryFields             []*aorm.StructField
 	FindManyHandler           func(Resourcer, interface{}, *qor.Context) error
 	FindOneHandler            func(Resourcer, interface{}, *MetaValues, *qor.Context) error
 	SaveHandler               func(Resourcer, interface{}, *qor.Context) error
@@ -215,10 +215,10 @@ type Resource struct {
 	Permission                *roles.Permission
 	Validators                []func(interface{}, *MetaValues, *qor.Context) error
 	Processors                []func(interface{}, *MetaValues, *qor.Context) error
-	primaryField              *gorm.Field
+	primaryField              *aorm.Field
 	newStructCallbacks        []func(obj interface{}, site qor.SiteInterface)
-	FakeScope                 *gorm.Scope
-	DefaultFilters            []func(context *qor.Context, db *gorm.DB) *gorm.DB
+	FakeScope                 *aorm.Scope
+	DefaultFilters            []func(context *qor.Context, db *aorm.DB) *aorm.DB
 	PathLevel                 int
 	ParentFieldName           string
 	ParentFieldDBName         string
@@ -284,7 +284,7 @@ func New(value interface{}, id, uid string) *Resource {
 	return res
 }
 
-func (res *Resource) GetPrimaryFields() []*gorm.StructField {
+func (res *Resource) GetPrimaryFields() []*aorm.StructField {
 	return res.PrimaryFields
 }
 
@@ -397,7 +397,7 @@ func (res *Resource) ToParam() string {
 	return ""
 }
 
-func (res *Resource) GetFakeScope() *gorm.Scope {
+func (res *Resource) GetFakeScope() *aorm.Scope {
 	return res.FakeScope
 }
 
@@ -437,7 +437,7 @@ func (res *Resource) NewStructCallback(callbacks ...func(obj interface{}, site q
 	return res
 }
 
-func (res *Resource) DefaultFilter(fns ...func(context *qor.Context, db *gorm.DB) *gorm.DB) {
+func (res *Resource) DefaultFilter(fns ...func(context *qor.Context, db *aorm.DB) *aorm.DB) {
 	res.DefaultFilters = append(res.DefaultFilters, fns...)
 }
 
@@ -458,7 +458,7 @@ func (res *Resource) SetPrimaryFields(fields ...string) error {
 	}
 
 	if primaryField := scope.PrimaryField(); primaryField != nil {
-		res.PrimaryFields = []*gorm.StructField{primaryField.StructField}
+		res.PrimaryFields = []*aorm.StructField{primaryField.StructField}
 		return nil
 	}
 

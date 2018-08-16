@@ -9,7 +9,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/jinzhu/gorm"
+	"github.com/moisespsena-go/aorm"
 	"github.com/aghape/aghape"
 	"github.com/aghape/aghape/utils"
 	"github.com/aghape/roles"
@@ -87,7 +87,7 @@ type Meta struct {
 	*MetaName
 	Alias            *MetaName
 	FieldName        string
-	FieldStruct      *gorm.StructField
+	FieldStruct      *aorm.StructField
 	ContextResourcer func(meta Metaor, context *qor.Context) Resourcer
 	Setter           func(resource interface{}, metaValue *MetaValue, context *qor.Context) error
 	Valuer           func(interface{}, *qor.Context) interface{}
@@ -222,7 +222,7 @@ func (meta *Meta) PreInitialize() error {
 		return value, fields[len(fields)-1]
 	}
 
-	var getField = func(fields []*gorm.StructField, name string) *gorm.StructField {
+	var getField = func(fields []*aorm.StructField, name string) *aorm.StructField {
 		for _, field := range fields {
 			if field.Name == name || field.DBName == name {
 				return field
@@ -296,7 +296,7 @@ func (meta *Meta) Initialize() error {
 		if relationship := field.Relationship; relationship != nil {
 			if relationship.Kind == "belongs_to" || relationship.Kind == "many_to_many" {
 				meta.Setter = func(resource interface{}, metaValue *MetaValue, context *qor.Context) (err error) {
-					scope := &gorm.Scope{Value: resource}
+					scope := &aorm.Scope{Value: resource}
 					reflectValue := reflect.Indirect(reflect.ValueOf(resource))
 					field := reflectValue.FieldByName(meta.FieldName)
 

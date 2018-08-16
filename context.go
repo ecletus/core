@@ -9,7 +9,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/jinzhu/gorm"
+	"github.com/moisespsena-go/aorm"
 	"github.com/moisespsena/go-i18n-modular/i18nmod"
 	"github.com/moisespsena/go-route"
 	"github.com/moisespsena/template/html/template"
@@ -50,7 +50,7 @@ type Context struct {
 	ParentResourceID []string
 	Errors
 
-	DB             *gorm.DB
+	DB             *aorm.DB
 	Config         *config.Config
 	I18nContext    i18nmod.Context
 	Locale         string
@@ -370,11 +370,11 @@ func (context *Context) NewChild(r *http.Request, prefix ...string) (*http.Reque
 	return r, child
 }
 
-func (context *Context) GetDB() *gorm.DB {
+func (context *Context) GetDB() *aorm.DB {
 	return context.DB
 }
 
-func (context *Context) SetDB(db *gorm.DB) {
+func (context *Context) SetDB(db *aorm.DB) {
 	if db != nil {
 		db = db.Set(CONTEXT_KEY, context)
 	}
@@ -451,7 +451,7 @@ func ContextFromRequest(req *http.Request) (ctx *Context) {
 	return
 }
 
-func ContextFromDB(db *gorm.DB) *Context {
+func ContextFromDB(db *aorm.DB) *Context {
 	v, _ := db.Get(CONTEXT_KEY)
 	return v.(*Context)
 }

@@ -8,7 +8,7 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/jinzhu/gorm"
+	"github.com/moisespsena-go/aorm"
 	"github.com/moisespsena/go-route"
 	"github.com/aghape/oss"
 	"github.com/aghape/oss/filesystem"
@@ -142,7 +142,7 @@ type DB struct {
 	Site   SiteInterface
 	Config *config.DBConfig
 	Name   string
-	DB     *gorm.DB
+	DB     *aorm.DB
 	Raw    *RawDB
 }
 
@@ -156,7 +156,7 @@ type SiteInterface interface {
 	route.Handler
 	Config() *config.SiteConfig
 	AdvancedConfig() config.OtherConfig
-	SetDB(name string, db *gorm.DB)
+	SetDB(name string, db *aorm.DB)
 	GetDB(name string) *DB
 	GetSystemDB() *DB
 	EachDB(f func(db *DB) bool) bool
@@ -230,7 +230,7 @@ func (s *Site) Init() (err error) {
 		}
 	}
 
-	var db_ *gorm.DB
+	var db_ *aorm.DB
 
 	for name, dbConfig := range s.config.Db {
 		db_, err = db.SystemFactories.Factory(dbConfig)
@@ -257,7 +257,7 @@ func (site *Site) StorageNames() *oss.Names {
 	return site.storageNames
 }
 
-func (site *Site) SetDB(name string, db *gorm.DB) {
+func (site *Site) SetDB(name string, db *aorm.DB) {
 	site.dbs[name] = &DB{site, nil, name, db.Set(PREFIX+".site", site), nil}
 }
 
@@ -366,7 +366,7 @@ func (site *Site) PublicURLf(p ...interface{}) string {
 	return site.PublicURL(parts...)
 }
 
-func GetSiteFromDB(db *gorm.DB) SiteInterface {
+func GetSiteFromDB(db *aorm.DB) SiteInterface {
 	s, _ := db.Get(PREFIX + ".site")
 	return s.(SiteInterface)
 }

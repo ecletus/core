@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"os"
 	"errors"
-	"github.com/jinzhu/gorm"
+	"github.com/moisespsena-go/aorm"
 	"sync"
 	"reflect"
 	"context"
@@ -13,12 +13,12 @@ import (
 	"io"
 	"bufio"
 	qorconfig "github.com/aghape/aghape/config"
-	_ "github.com/jinzhu/gorm/dialects/mysql"
-	_ "github.com/jinzhu/gorm/dialects/postgres"
-	_ "github.com/jinzhu/gorm/dialects/sqlite"
+	_ "github.com/moisespsena-go/aorm/dialects/mysql"
+	_ "github.com/moisespsena-go/aorm/dialects/postgres"
+	_ "github.com/moisespsena-go/aorm/dialects/sqlite"
 )
 
-var FakeDB = &gorm.DB{}
+var FakeDB = &aorm.DB{}
 
 type RawDBConnection interface {
 	io.Closer
@@ -71,7 +71,7 @@ func (c *CmdDBConnection) Close() error {
 	return nil
 }
 
-type Factory func(config *qorconfig.DBConfig) (db *gorm.DB, err error)
+type Factory func(config *qorconfig.DBConfig) (db *aorm.DB, err error)
 type RawFactory func(ctx context.Context, config *qorconfig.DBConfig) (db RawDBConnection, err error)
 type Factories map[string]Factory
 type RawFactories map[string]RawFactory
@@ -80,7 +80,7 @@ func (f Factories) Register(adapterName string, factory Factory) {
 	f[adapterName] = factory
 }
 
-func (f Factories) Factory(config *qorconfig.DBConfig) (db *gorm.DB, err error) {
+func (f Factories) Factory(config *qorconfig.DBConfig) (db *aorm.DB, err error) {
 	if fc, ok := f[config.Adapter]; ok {
 		db, err = fc(config)
 		if err != nil {
@@ -96,14 +96,14 @@ func (f Factories) Factory(config *qorconfig.DBConfig) (db *gorm.DB, err error) 
 }
 
 var SystemFactories = Factories{
-	"mysql": func(config *qorconfig.DBConfig) (db *gorm.DB, err error) {
-		return gorm.Open("mysql", config.DSN())
+	"mysql": func(config *qorconfig.DBConfig) (db *aorm.DB, err error) {
+		return aorm.Open("mysql", config.DSN())
 	},
-	"postgres": func(config *qorconfig.DBConfig) (db *gorm.DB, err error) {
-		return gorm.Open("postgres", config.DSN())
+	"postgres": func(config *qorconfig.DBConfig) (db *aorm.DB, err error) {
+		return aorm.Open("postgres", config.DSN())
 	},
-	"sqlite": func(config *qorconfig.DBConfig) (db *gorm.DB, err error) {
-		return gorm.Open("sqlite3", config.DSN())
+	"sqlite": func(config *qorconfig.DBConfig) (db *aorm.DB, err error) {
+		return aorm.Open("sqlite3", config.DSN())
 	},
 }
 
@@ -140,7 +140,7 @@ type FieldCacher struct {
 	data sync.Map
 }
 
-func (fc *FieldCacher) Get(model interface{}, fieldName string) *gorm.Field {
+func (fc *FieldCacher) Get(model interface{}, fieldName string) *aorm.Field {
 	typ := reflect.Indirect(reflect.ValueOf(model)).Type()
 	mi, ok := fc.data.Load(typ)
 	if !ok {
@@ -156,7 +156,7 @@ func (fc *FieldCacher) Get(model interface{}, fieldName string) *gorm.Field {
 		}
 		m.Store(fieldName, fi)
 	}
-	return fi.(*gorm.Field)
+	return fi.(*aorm.Field)
 }
 
 var FieldCache = &FieldCacher{}

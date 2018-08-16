@@ -5,7 +5,7 @@ import (
 	"context"
 	"net/http"
 
-	"github.com/jinzhu/gorm"
+	"github.com/moisespsena-go/aorm"
 )
 
 type ContextDataNode struct {
@@ -63,15 +63,15 @@ func (d *ContextData) GetCallback(key interface{}, cb func(v interface{}, ok boo
 	return cb(v, ok)
 }
 
-func (d *ContextData) SetDB(dbname string, db *gorm.DB) *ContextData {
+func (d *ContextData) SetDB(dbname string, db *aorm.DB) *ContextData {
 	return d.Set("db:"+dbname, db)
 }
 
-func (d *ContextData) GetDB(dbname string) *gorm.DB {
-	return d.Get("db:" + dbname).(*gorm.DB)
+func (d *ContextData) GetDB(dbname string) *aorm.DB {
+	return d.Get("db:" + dbname).(*aorm.DB)
 }
 
-func (d *ContextData) RequireDB(dbname string) *gorm.DB {
+func (d *ContextData) RequireDB(dbname string) *aorm.DB {
 	db := d.GetDB(dbname)
 	if db == nil {
 		panic(fmt.Sprint("Database %q isn't set in context data.", dbname))

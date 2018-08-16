@@ -6,7 +6,7 @@ import (
 	"reflect"
 	"strings"
 
-	"github.com/jinzhu/gorm"
+	"github.com/moisespsena-go/aorm"
 	"github.com/aghape/aghape"
 	"github.com/aghape/aghape/utils"
 	"github.com/aghape/roles"
@@ -200,11 +200,11 @@ func CallFindManyHandler(resourcer Resourcer, result interface{}, context *qor.C
 	return err
 }
 
-func (res *Resource) FindOneBasic(db *gorm.DB, id string) (BasicValue, error) {
+func (res *Resource) FindOneBasic(db *aorm.DB, id string) (BasicValue, error) {
 	return res.CallFindOneBasic(res, db, id)
 }
 
-func (res *Resource) CallFindOneBasic(r Resourcer, db *gorm.DB, id string) (BasicValue, error) {
+func (res *Resource) CallFindOneBasic(r Resourcer, db *aorm.DB, id string) (BasicValue, error) {
 	context := &qor.Context{DB: db, ResourceID: id}
 	context.Data().Set("skip.fragments", true)
 	l := res.Layouts[BASIC_LAYOUT]
@@ -219,11 +219,11 @@ func (res *Resource) CallFindOneBasic(r Resourcer, db *gorm.DB, id string) (Basi
 	return res.TransformToBasicValueFunc(v), nil
 }
 
-func (res *Resource) FindManyBasic(db *gorm.DB, id string) (r []BasicValue, err error) {
+func (res *Resource) FindManyBasic(db *aorm.DB, id string) (r []BasicValue, err error) {
 	return res.CallFindManyBasic(res, db, id)
 }
 
-func (res *Resource) CallFindManyBasic(r Resourcer, db *gorm.DB, id string) (rbv []BasicValue, err error) {
+func (res *Resource) CallFindManyBasic(r Resourcer, db *aorm.DB, id string) (rbv []BasicValue, err error) {
 	context := &qor.Context{DB: db}
 	context.Data().Set("skip.fragments", true)
 	l := res.Layouts[BASIC_LAYOUT]
@@ -365,7 +365,7 @@ func (res *Resource) deleteHandler(resourcer Resourcer, result interface{}, cont
 				return context.DB.Delete(result).Error
 			}
 		}
-		return gorm.ErrRecordNotFound
+		return aorm.ErrRecordNotFound
 	}
 	return roles.ErrPermissionDenied
 }
