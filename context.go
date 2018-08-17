@@ -9,15 +9,15 @@ import (
 	"strings"
 	"time"
 
-	"github.com/moisespsena-go/aorm"
-	"github.com/moisespsena/go-i18n-modular/i18nmod"
-	"github.com/moisespsena/go-route"
-	"github.com/moisespsena/template/html/template"
-	"github.com/aghape/common"
 	"github.com/aghape/aghape/config"
 	"github.com/aghape/aghape/contextdata"
 	"github.com/aghape/aghape/utils/uri"
 	uurl "github.com/aghape/aghape/utils/url"
+	"github.com/aghape/common"
+	"github.com/moisespsena-go/aorm"
+	"github.com/moisespsena/go-i18n-modular/i18nmod"
+	"github.com/moisespsena/go-route"
+	"github.com/moisespsena/template/html/template"
 )
 
 var CONTEXT_KEY = PREFIX
@@ -75,8 +75,9 @@ func (context *Context) Breadcrumbs() *Breadcrumbs {
 	return context.breadcrumbs
 }
 
-func (context *Context) PushI18nGroup(group string) {
+func (context *Context) PushI18nGroup(group string) func() {
 	context.I18nGroupStack = &i18nGroup{context.I18nGroupStack, group}
+	return context.PopI18nGroup
 }
 
 func (context *Context) PopI18nGroup() {
