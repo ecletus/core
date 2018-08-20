@@ -131,6 +131,9 @@ func Stringify(object interface{}) string {
 	}); ok {
 		return obj.Stringify()
 	}
+	if obj, ok := object.(fmt.Stringer); ok {
+		return obj.String()
+	}
 
 	scope := aorm.Scope{Value: object}
 	for _, column := range []string{"Name", "Title", "Code"} {

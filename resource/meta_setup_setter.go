@@ -1,15 +1,16 @@
 package resource
 
 import (
-	"strings"
-	"github.com/qor/qor"
+	"database/sql"
+	"fmt"
 	"reflect"
 	"runtime/debug"
-	"github.com/qor/validations"
-	"fmt"
-	"github.com/qor/qor/utils"
-	"database/sql"
+	"strings"
 	"time"
+
+	"github.com/aghape/aghape"
+	"github.com/aghape/aghape/utils"
+	"github.com/aghape/validations"
 )
 
 func setupSetter(meta *Meta, fieldName string, record interface{}) {
@@ -21,14 +22,14 @@ func setupSetter(meta *Meta, fieldName string, record interface{}) {
 		setupSetter(meta, strings.Join(fieldNames[1:], "."), getNestedModel(record, strings.Join(fieldNames[0:2], "."), nil))
 
 		oldSetter := meta.Setter
-		meta.Setter = func(record interface{}, metaValue *MetaValue, context *qor.Context) {
-			oldSetter(getNestedModel(record, strings.Join(fieldNames[0:2], "."), context), metaValue, context)
+		meta.Setter = func(record interface{}, metaValue *MetaValue, context *qor.Context) error {
+			return oldSetter(getNestedModel(record, strings.Join(fieldNames[0:2], "."), context), metaValue, context)
 		}
 		return
 	}
 
-	commonSetter := func(setter func(field reflect.Value, metaValue *MetaValue, context *qor.Context, record interface{})) func(record interface{}, metaValue *MetaValue, context *qor.Context) {
-		return func(record interface{}, metaValue *MetaValue, context *qor.Context) {
+	commonSetter := func(setter func(field reflect.Value, metaValue *MetaValue, context *qor.Context, record interface{})) func(record interface{}, metaValue *MetaValue, context *qor.Context) error {
+		return func(record interface{}, metaValue *MetaValue, context *qor.Context) (err error) {
 			if metaValue == nil {
 				return
 			}
@@ -40,7 +41,7 @@ func setupSetter(meta *Meta, fieldName string, record interface{}) {
 				}
 			}()
 
-			field := utils.Indirect(reflect.ValueOf(record)).FieldByName(fieldName)
+			field := reflect.Indirect(reflect.ValueOf(record)).FieldByName(fieldName)
 			if field.Kind() == reflect.Ptr {
 				if field.IsNil() && utils.ToString(metaValue.Value) != "" {
 					field.Set(utils.NewValue(field.Type()).Elem())
@@ -59,6 +60,7 @@ func setupSetter(meta *Meta, fieldName string, record interface{}) {
 			if field.IsValid() && field.CanAddr() {
 				setter(field, metaValue, context, record)
 			}
+			return nil
 		}
 	}
 

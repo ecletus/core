@@ -68,7 +68,7 @@ type Resourcer interface {
 	Save(interface{}, *qor.Context) error
 	Delete(interface{}, *qor.Context) error
 	NewSlice() interface{}
-	NewStruct(site qor.SiteInterface) interface{}
+	NewStruct(site ...qor.SiteInterface) interface{}
 	GetPathLevel() int
 	SetParent(parent Resourcer, fieldName string)
 	GetParentResource() Resourcer
@@ -481,7 +481,7 @@ func (res *Resource) AddProcessor(fc func(interface{}, *MetaValues, *qor.Context
 }
 
 // NewStruct initialize a struct for the Resource
-func (res *Resource) NewStruct(site qor.SiteInterface) interface{} {
+func (res *Resource) NewStruct(site ...qor.SiteInterface) interface{} {
 	if res.Value == nil {
 		return nil
 	}
@@ -493,13 +493,16 @@ func (res *Resource) NewStruct(site qor.SiteInterface) interface{} {
 		init.Init()
 	}
 
-	if init, ok := obj.(interface {
-		Init(siteInterface qor.SiteInterface)
-	}); ok {
-		init.Init(site)
-	}
-	for _, cb := range res.newStructCallbacks {
-		cb(obj, site)
+	if len(site) != 0 && site[0] != nil {
+		if init, ok := obj.(interface {
+			Init(siteInterface qor.SiteInterface)
+		}); ok {
+			init.Init(site[0])
+		}
+
+		for _, cb := range res.newStructCallbacks {
+			cb(obj, site[0])
+		}
 	}
 
 	return obj
