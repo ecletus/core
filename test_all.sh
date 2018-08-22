@@ -11,4 +11,4 @@ function gotest_path {
   done
 }
 
-gotest_path $GOPATH/src/github.com/qor
+gotest_path $GOPATH/src/github.com/aghape

@@ -4,7 +4,7 @@ import (
 	"reflect"
 	"strings"
 
-	"github.com/aghape/aghape"
+	"github.com/aghape/core"
 )
 
 func setupValuer(meta *Meta, fieldName string, record interface{}) {
@@ -16,14 +16,14 @@ func setupValuer(meta *Meta, fieldName string, record interface{}) {
 		setupValuer(meta, strings.Join(fieldNames[1:], "."), getNestedModel(record, strings.Join(fieldNames[0:2], "."), nil))
 
 		oldValuer := meta.Valuer
-		meta.Valuer = func(record interface{}, context *qor.Context) interface{} {
+		meta.Valuer = func(record interface{}, context *core.Context) interface{} {
 			return oldValuer(getNestedModel(record, strings.Join(fieldNames[0:2], "."), context), context)
 		}
 		return
 	}
 
 	if meta.FieldStruct != nil {
-		meta.Valuer = func(value interface{}, context *qor.Context) interface{} {
+		meta.Valuer = func(value interface{}, context *core.Context) interface{} {
 			scope := context.DB.NewScope(value)
 			fieldName := meta.FieldName
 			if nestedField {

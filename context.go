@@ -1,4 +1,4 @@
-package qor
+package core
 
 import (
 	"context"
@@ -9,10 +9,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/aghape/aghape/config"
-	"github.com/aghape/aghape/contextdata"
-	"github.com/aghape/aghape/utils/uri"
-	uurl "github.com/aghape/aghape/utils/url"
+	"github.com/aghape/core/config"
+	"github.com/aghape/core/contextdata"
+	"github.com/aghape/core/utils/uri"
+	uurl "github.com/aghape/core/utils/url"
 	"github.com/aghape/common"
 	"github.com/moisespsena-go/aorm"
 	"github.com/moisespsena/go-i18n-modular/i18nmod"

@@ -10,8 +10,8 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/aghape/aghape"
-	"github.com/aghape/aghape/utils"
+	"github.com/aghape/core"
+	"github.com/aghape/core/utils"
 )
 
 func convertMapToMetaValues(values map[string]interface{}, metaors []Metaor) (*MetaValues, error) {
@@ -78,7 +78,7 @@ var (
 )
 
 // ConvertFormToMetaValues convert form to meta values
-func ConvertFormDataToMetaValues(context *qor.Context, form url.Values, multipartForm *multipart.Form, metaors []Metaor, prefix string) (*MetaValues, error) {
+func ConvertFormDataToMetaValues(context *core.Context, form url.Values, multipartForm *multipart.Form, metaors []Metaor, prefix string) (*MetaValues, error) {
 	metaValues := &MetaValues{}
 	metaorsMap := map[string]Metaor{}
 	convertedNextLevel := map[string]bool{}
@@ -168,13 +168,13 @@ func ConvertFormDataToMetaValues(context *qor.Context, form url.Values, multipar
 }
 
 // ConvertFormToMetaValues convert form to meta values
-func ConvertFormToMetaValues(context *qor.Context, request *http.Request, metaors []Metaor, prefix string) (*MetaValues, error) {
+func ConvertFormToMetaValues(context *core.Context, request *http.Request, metaors []Metaor, prefix string) (*MetaValues, error) {
 	return ConvertFormDataToMetaValues(context, request.Form, request.MultipartForm, metaors, prefix)
 }
 
 // Decode decode context to result according to resource definition
-func Decode(context *qor.Context, result interface{}, res Resourcer) error {
-	var errors qor.Errors
+func Decode(context *core.Context, result interface{}, res Resourcer) error {
+	var errors core.Errors
 	var err error
 	var metaValues *MetaValues
 

@@ -4,7 +4,7 @@ import (
 	"strings"
 
 	"github.com/moisespsena/go-edis"
-	"github.com/aghape/aghape"
+	"github.com/aghape/core"
 )
 
 type DBActionEventName string
@@ -39,8 +39,8 @@ type DBEvent struct {
 	Resource Resourcer
 	Action   DBActionEventName
 	Recorde  interface{}
-	Context  *qor.Context
-	OriginalContext  *qor.Context
+	Context  *core.Context
+	OriginalContext  *core.Context
 	Parent   *Parent
 	DBError  error
 }

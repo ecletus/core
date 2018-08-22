@@ -1,4 +1,4 @@
-package qor
+package core
 
 type Breadcrumb interface {
 	URI(context *Context) string

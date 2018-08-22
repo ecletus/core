@@ -1,4 +1,4 @@
-package qor
+package core
 
 import (
 	"context"
@@ -6,7 +6,7 @@ import (
 
 	"github.com/moisespsena/go-i18n-modular/i18nmod"
 	"github.com/moisespsena/go-route"
-	"github.com/aghape/aghape/config"
+	"github.com/aghape/core/config"
 )
 
 type ContextFactory struct {

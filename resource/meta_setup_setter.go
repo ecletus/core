@@ -8,8 +8,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/aghape/aghape"
-	"github.com/aghape/aghape/utils"
+	"github.com/aghape/core"
+	"github.com/aghape/core/utils"
 	"github.com/aghape/validations"
 )
 
@@ -22,14 +22,14 @@ func setupSetter(meta *Meta, fieldName string, record interface{}) {
 		setupSetter(meta, strings.Join(fieldNames[1:], "."), getNestedModel(record, strings.Join(fieldNames[0:2], "."), nil))
 
 		oldSetter := meta.Setter
-		meta.Setter = func(record interface{}, metaValue *MetaValue, context *qor.Context) error {
+		meta.Setter = func(record interface{}, metaValue *MetaValue, context *core.Context) error {
 			return oldSetter(getNestedModel(record, strings.Join(fieldNames[0:2], "."), context), metaValue, context)
 		}
 		return
 	}
 
-	commonSetter := func(setter func(field reflect.Value, metaValue *MetaValue, context *qor.Context, record interface{})) func(record interface{}, metaValue *MetaValue, context *qor.Context) error {
-		return func(record interface{}, metaValue *MetaValue, context *qor.Context) (err error) {
+	commonSetter := func(setter func(field reflect.Value, metaValue *MetaValue, context *core.Context, record interface{})) func(record interface{}, metaValue *MetaValue, context *core.Context) error {
+		return func(record interface{}, metaValue *MetaValue, context *core.Context) (err error) {
 			if metaValue == nil {
 				return
 			}
@@ -68,7 +68,7 @@ func setupSetter(meta *Meta, fieldName string, record interface{}) {
 	if meta.FieldStruct != nil {
 		if relationship := meta.FieldStruct.Relationship; relationship != nil {
 			if relationship.Kind == "belongs_to" || relationship.Kind == "many_to_many" {
-				meta.Setter = commonSetter(func(field reflect.Value, metaValue *MetaValue, context *qor.Context, record interface{}) {
+				meta.Setter = commonSetter(func(field reflect.Value, metaValue *MetaValue, context *core.Context, record interface{}) {
 					var (
 						scope         = context.GetDB().NewScope(record)
 						indirectValue = reflect.Indirect(reflect.ValueOf(record))
@@ -134,19 +134,19 @@ func setupSetter(meta *Meta, fieldName string, record interface{}) {
 
 	switch field.Kind() {
 	case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
-		meta.Setter = commonSetter(func(field reflect.Value, metaValue *MetaValue, context *qor.Context, record interface{}) {
+		meta.Setter = commonSetter(func(field reflect.Value, metaValue *MetaValue, context *core.Context, record interface{}) {
 			field.SetInt(utils.ToInt(metaValue.Value))
 		})
 	case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:
-		meta.Setter = commonSetter(func(field reflect.Value, metaValue *MetaValue, context *qor.Context, record interface{}) {
+		meta.Setter = commonSetter(func(field reflect.Value, metaValue *MetaValue, context *core.Context, record interface{}) {
 			field.SetUint(utils.ToUint(metaValue.Value))
 		})
 	case reflect.Float32, reflect.Float64:
-		meta.Setter = commonSetter(func(field reflect.Value, metaValue *MetaValue, context *qor.Context, record interface{}) {
+		meta.Setter = commonSetter(func(field reflect.Value, metaValue *MetaValue, context *core.Context, record interface{}) {
 			field.SetFloat(utils.ToFloat(metaValue.Value))
 		})
 	case reflect.Bool:
-		meta.Setter = commonSetter(func(field reflect.Value, metaValue *MetaValue, context *qor.Context, record interface{}) {
+		meta.Setter = commonSetter(func(field reflect.Value, metaValue *MetaValue, context *core.Context, record interface{}) {
 			if utils.ToString(metaValue.Value) == "true" {
 				field.SetBool(true)
 			} else {
@@ -155,7 +155,7 @@ func setupSetter(meta *Meta, fieldName string, record interface{}) {
 		})
 	default:
 		if _, ok := field.Addr().Interface().(FieldScanner); ok {
-			meta.Setter = commonSetter(func(field reflect.Value, metaValue *MetaValue, context *qor.Context, record interface{}) {
+			meta.Setter = commonSetter(func(field reflect.Value, metaValue *MetaValue, context *core.Context, record interface{}) {
 				if scanner, ok := field.Addr().Interface().(FieldScanner); ok {
 					if metaValue.Value == nil && len(metaValue.MetaValues.Values) > 0 {
 						decodeMetaValuesToField(meta.Resource, field, metaValue, context)
@@ -169,7 +169,7 @@ func setupSetter(meta *Meta, fieldName string, record interface{}) {
 				}
 			})
 		} else if _, ok := field.Addr().Interface().(sql.Scanner); ok {
-			meta.Setter = commonSetter(func(field reflect.Value, metaValue *MetaValue, context *qor.Context, record interface{}) {
+			meta.Setter = commonSetter(func(field reflect.Value, metaValue *MetaValue, context *core.Context, record interface{}) {
 				if scanner, ok := field.Addr().Interface().(sql.Scanner); ok {
 					if metaValue.Value == nil && len(metaValue.MetaValues.Values) > 0 {
 						decodeMetaValuesToField(meta.Resource, field, metaValue, context)
@@ -185,15 +185,15 @@ func setupSetter(meta *Meta, fieldName string, record interface{}) {
 				}
 			})
 		} else if reflect.TypeOf("").ConvertibleTo(field.Type()) {
-			meta.Setter = commonSetter(func(field reflect.Value, metaValue *MetaValue, context *qor.Context, record interface{}) {
+			meta.Setter = commonSetter(func(field reflect.Value, metaValue *MetaValue, context *core.Context, record interface{}) {
 				field.Set(reflect.ValueOf(utils.ToString(metaValue.Value)).Convert(field.Type()))
 			})
 		} else if reflect.TypeOf([]string{}).ConvertibleTo(field.Type()) {
-			meta.Setter = commonSetter(func(field reflect.Value, metaValue *MetaValue, context *qor.Context, record interface{}) {
+			meta.Setter = commonSetter(func(field reflect.Value, metaValue *MetaValue, context *core.Context, record interface{}) {
 				field.Set(reflect.ValueOf(utils.ToArray(metaValue.Value)).Convert(field.Type()))
 			})
 		} else if _, ok := field.Addr().Interface().(*time.Time); ok {
-			meta.Setter = commonSetter(func(field reflect.Value, metaValue *MetaValue, context *qor.Context, record interface{}) {
+			meta.Setter = commonSetter(func(field reflect.Value, metaValue *MetaValue, context *core.Context, record interface{}) {
 				if str := utils.ToString(metaValue.Value); str != "" {
 					if newTime, err := utils.ParseTime(str, context); err == nil {
 						field.Set(reflect.ValueOf(newTime))

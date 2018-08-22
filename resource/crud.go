@@ -7,8 +7,8 @@ import (
 	"strings"
 
 	"github.com/moisespsena-go/aorm"
-	"github.com/aghape/aghape"
-	"github.com/aghape/aghape/utils"
+	"github.com/aghape/core"
+	"github.com/aghape/core/utils"
 	"github.com/aghape/roles"
 )
 
@@ -65,7 +65,7 @@ func (res *Resource) ToPrimaryQueryParamsFromMetaValue(metaValues *MetaValues) (
 	return strings.Join(sqls, " AND "), primaryValues
 }
 
-func (res *Resource) CallFindOneHandler(resourcer Resourcer, result interface{}, metaValues *MetaValues, context *qor.Context) (err error) {
+func (res *Resource) CallFindOneHandler(resourcer Resourcer, result interface{}, metaValues *MetaValues, context *core.Context) (err error) {
 	originalContext := context
 	context = context.Clone()
 	var (
@@ -118,7 +118,7 @@ func (res *Resource) CallFindOneHandler(resourcer Resourcer, result interface{},
 	return errors.New("failed to find")
 }
 
-func (res *Resource) CallFindManyLayout(r Resourcer, result interface{}, context *qor.Context, layout LayoutInterface) error {
+func (res *Resource) CallFindManyLayout(r Resourcer, result interface{}, context *core.Context, layout LayoutInterface) error {
 	if res.HasPermission(roles.Read, context) {
 		if layout.GetPrepare() != nil {
 			layout.GetPrepare()(r, context)
@@ -128,7 +128,7 @@ func (res *Resource) CallFindManyLayout(r Resourcer, result interface{}, context
 	return roles.ErrPermissionDenied
 }
 
-func (res *Resource) CallFindOneLayout(r Resourcer, result interface{}, metaValues *MetaValues, context *qor.Context, layout LayoutInterface) (err error) {
+func (res *Resource) CallFindOneLayout(r Resourcer, result interface{}, metaValues *MetaValues, context *core.Context, layout LayoutInterface) (err error) {
 	if res.HasPermission(roles.Read, context) {
 		if layout.GetPrepare() != nil {
 			layout.GetPrepare()(r, context)
@@ -138,27 +138,27 @@ func (res *Resource) CallFindOneLayout(r Resourcer, result interface{}, metaValu
 	return roles.ErrPermissionDenied
 }
 
-func (res *Resource) FindManyLayout(result interface{}, context *qor.Context, layout LayoutInterface) error {
+func (res *Resource) FindManyLayout(result interface{}, context *core.Context, layout LayoutInterface) error {
 	return res.CallFindManyLayout(res, result, context, layout)
 }
 
-func (res *Resource) FindOneLayout(result interface{}, metaValues *MetaValues, context *qor.Context, layout LayoutInterface) (err error) {
+func (res *Resource) FindOneLayout(result interface{}, metaValues *MetaValues, context *core.Context, layout LayoutInterface) (err error) {
 	return res.CallFindOneLayout(res, result, metaValues, context, layout)
 }
 
-func (res *Resource) FindMany(result interface{}, context *qor.Context) error {
+func (res *Resource) FindMany(result interface{}, context *core.Context) error {
 	return res.FindManyLayout(result, context, res.Layouts[DEFAULT_LAYOUT])
 }
 
-func (res *Resource) FindOne(result interface{}, metaValues *MetaValues, context *qor.Context) error {
+func (res *Resource) FindOne(result interface{}, metaValues *MetaValues, context *core.Context) error {
 	return res.FindOneLayout(result, metaValues, context, res.Layouts[DEFAULT_LAYOUT])
 }
 
-func (res *Resource) CallFindManyHandler(resourcer Resourcer, result interface{}, context *qor.Context) error {
+func (res *Resource) CallFindManyHandler(resourcer Resourcer, result interface{}, context *core.Context) error {
 	return CallFindManyHandler(resourcer, result, context)
 }
 
-func CallFindManyHandler(resourcer Resourcer, result interface{}, context *qor.Context) (err error) {
+func CallFindManyHandler(resourcer Resourcer, result interface{}, context *core.Context) (err error) {
 	originalContext := context
 	context = context.Clone()
 	callbacks := resourcer.GetBeforeFindCallbacks()
@@ -205,7 +205,7 @@ func (res *Resource) FindOneBasic(db *aorm.DB, id string) (BasicValue, error) {
 }
 
 func (res *Resource) CallFindOneBasic(r Resourcer, db *aorm.DB, id string) (BasicValue, error) {
-	context := &qor.Context{DB: db, ResourceID: id}
+	context := &core.Context{DB: db, ResourceID: id}
 	context.Data().Set("skip.fragments", true)
 	l := res.Layouts[BASIC_LAYOUT]
 	v := l.NewStruct()
@@ -224,7 +224,7 @@ func (res *Resource) FindManyBasic(db *aorm.DB, id string) (r []BasicValue, err 
 }
 
 func (res *Resource) CallFindManyBasic(r Resourcer, db *aorm.DB, id string) (rbv []BasicValue, err error) {
-	context := &qor.Context{DB: db}
+	context := &core.Context{DB: db}
 	context.Data().Set("skip.fragments", true)
 	l := res.Layouts[BASIC_LAYOUT]
 	v := l.NewSlice()
@@ -235,13 +235,13 @@ func (res *Resource) CallFindManyBasic(r Resourcer, db *aorm.DB, id string) (rbv
 	return v.([]BasicValue), nil
 }
 
-func (res *Resource) DBDelete(result interface{}, context *qor.Context, parent *Parent) error {
+func (res *Resource) DBDelete(result interface{}, context *core.Context, parent *Parent) error {
 	return nil
 }
 
 var DB_PARENT_KEY = "qor:resource.parent"
 
-func (res *Resource) DBSave(resourcer Resourcer, result interface{}, context *qor.Context, parent *Parent) (err error) {
+func (res *Resource) DBSave(resourcer Resourcer, result interface{}, context *core.Context, parent *Parent) (err error) {
 	originalContext := context
 	context = context.Clone()
 	var insides []interface{}
@@ -349,7 +349,7 @@ func (res *Resource) DBSave(resourcer Resourcer, result interface{}, context *qo
 	return
 }
 
-func (res *Resource) saveHandler(resourcer Resourcer, result interface{}, context *qor.Context) error {
+func (res *Resource) saveHandler(resourcer Resourcer, result interface{}, context *core.Context) error {
 	if (context.GetDB().NewScope(result).PrimaryKeyZero() &&
 		res.HasPermission(roles.Create, context)) || // has create permission
 		res.HasPermission(roles.Update, context) { // has update permission
@@ -358,7 +358,7 @@ func (res *Resource) saveHandler(resourcer Resourcer, result interface{}, contex
 	return roles.ErrPermissionDenied
 }
 
-func (res *Resource) deleteHandler(resourcer Resourcer, result interface{}, context *qor.Context) error {
+func (res *Resource) deleteHandler(resourcer Resourcer, result interface{}, context *core.Context) error {
 	if res.HasPermission(roles.Delete, context) {
 		if primaryQuerySQL, primaryParams := res.ToPrimaryQueryParams(context.ResourceID); primaryQuerySQL != "" {
 			if !context.DB.First(result, append([]interface{}{primaryQuerySQL}, primaryParams...)...).RecordNotFound() {
@@ -371,21 +371,21 @@ func (res *Resource) deleteHandler(resourcer Resourcer, result interface{}, cont
 }
 
 // CallSave call save method
-func (res *Resource) Save(result interface{}, context *qor.Context) error {
+func (res *Resource) Save(result interface{}, context *core.Context) error {
 	return res.CallSave(res, result, context)
 }
 
 // CallSave call save method
-func (res *Resource) CallSave(r Resourcer, result interface{}, context *qor.Context) error {
+func (res *Resource) CallSave(r Resourcer, result interface{}, context *core.Context) error {
 	return res.SaveHandler(r, result, context)
 }
 
 // CallDelete call delete method
-func (res *Resource) Delete(result interface{}, context *qor.Context) error {
+func (res *Resource) Delete(result interface{}, context *core.Context) error {
 	return res.CallDelete(res, result, context)
 }
 
 // CallDelete call delete method
-func (res *Resource) CallDelete(r Resourcer, result interface{}, context *qor.Context) error {
+func (res *Resource) CallDelete(r Resourcer, result interface{}, context *core.Context) error {
 	return res.DeleteHandler(r, result, context)
 }

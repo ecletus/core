@@ -6,7 +6,7 @@ import (
 	"reflect"
 	"strings"
 	"net/http"
-	"github.com/aghape/aghape"
+	"github.com/aghape/core"
 )
 
 type Container struct {
@@ -102,7 +102,7 @@ func (mux *ServeMux) MountTo(path string, container *http.ServeMux) *http.ServeM
 	mux.container = &Container{path,container}
 	container.HandleFunc(path, mux.GetCurrentNotFoundHandler())
 	container.HandleFunc(path + "/", func(w http.ResponseWriter, r *http.Request) {
-		r, _ = qor.NewContextFromRequestPair(w, r, path)
+		r, _ = core.NewContextFromRequestPair(w, r, path)
 		mux.ServeHTTP(w, r)
 	})
 	return container
@@ -125,11 +125,11 @@ func (s *PathHandler) NotFound(handler http.Handler) *PathHandler {
 
 func (s *PathHandler) ServeHTTP(w http.ResponseWriter, r *http.Request)  {
 	if s.path == "/" {
-		r, _ := qor.NewContextFromRequestPair(w, r, s.path)
+		r, _ := core.NewContextFromRequestPair(w, r, s.path)
 		s.handler.ServeHTTP(w, r)
 	} else {
 		if strings.HasPrefix(r.URL.Path, s.path) {
-			r, _ = qor.NewContextFromRequestPair(w, r, s.path)
+			r, _ = core.NewContextFromRequestPair(w, r, s.path)
 			s.handler.ServeHTTP(w, r)
 		} else {
 			s.notFoundHandler.ServeHTTP(w, r)
@@ -142,5 +142,5 @@ func NewPathHandler(path string, handler http.Handler) *PathHandler {
 }
 
 func RootMux(handler http.Handler) http.Handler {
-	return NewPathHandler(qor.CONFIG().Prefix(), handler)
+	return NewPathHandler(core.CONFIG().Prefix(), handler)
 }

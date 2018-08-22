@@ -1,4 +1,4 @@
-package qor
+package core
 
 import (
 	"os"
@@ -6,7 +6,7 @@ import (
 
 	"github.com/gorilla/securecookie"
 	"github.com/gorilla/sessions"
-	"github.com/aghape/aghape/contextdata"
+	"github.com/aghape/core/contextdata"
 )
 
 type CookiStoreFactory func(context *Context, options *sessions.Options, codecs *CookieCodec) *sessions.CookieStore

@@ -1,4 +1,4 @@
-package qor
+package core
 
 import (
 	"context"
@@ -13,8 +13,8 @@ import (
 	"github.com/aghape/oss"
 	"github.com/aghape/oss/filesystem"
 	"github.com/aghape/oss/ftp"
-	"github.com/aghape/aghape/config"
-	"github.com/aghape/aghape/db"
+	"github.com/aghape/core/config"
+	"github.com/aghape/core/db"
 )
 
 const DB_SYSTEM = "system"

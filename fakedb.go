@@ -1,4 +1,4 @@
-package qor
+package core
 
 import (
 	"github.com/moisespsena-go/aorm"

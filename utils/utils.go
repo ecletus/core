@@ -20,7 +20,7 @@ import (
 	"github.com/moisespsena-go/aorm"
 	"github.com/jinzhu/now"
 	"github.com/microcosm-cc/bluemonday"
-	"github.com/aghape/aghape"
+	"github.com/aghape/core"
 	"github.com/aghape/helpers"
 
 	"strings"
@@ -105,7 +105,7 @@ func ToParamString(str string) string {
 }
 
 // SetCookie set cookie for context
-func SetCookie(cookie http.Cookie, context *qor.Context) {
+func SetCookie(cookie http.Cookie, context *core.Context) {
 	cookie.HttpOnly = true
 
 	// set https cookie
@@ -231,7 +231,7 @@ func filenameWithLineNum() string {
 //     utils.GetLocale = func(context *qor.Context) string {
 //         // ....
 //     }
-var GetLocale = func(context *qor.Context) string {
+var GetLocale = func(context *core.Context) string {
 	if locale := context.Request.Header.Get("Locale"); locale != "" {
 		return locale
 	}
@@ -256,7 +256,7 @@ var GetLocale = func(context *qor.Context) string {
 //     utils.ParseTime = func(timeStr string, context *qor.Context) (time.Time, error) {
 //         // ....
 //     }
-var ParseTime = func(timeStr string, context *qor.Context) (time.Time, error) {
+var ParseTime = func(timeStr string, context *core.Context) (time.Time, error) {
 	return now.Parse(timeStr)
 }
 
@@ -265,7 +265,7 @@ var ParseTime = func(timeStr string, context *qor.Context) (time.Time, error) {
 //     utils.FormatTime = func(time time.Time, format string, context *qor.Context) string {
 //         // ....
 //     }
-var FormatTime = func(date time.Time, format string, context *qor.Context) string {
+var FormatTime = func(date time.Time, format string, context *core.Context) string {
 	return date.Format(format)
 }
 

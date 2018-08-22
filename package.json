@@ -1,15 +1,15 @@
 {
-    "name": "qor",
+    "name": "core",
     "description": "An enterprise-level open source content management system.",
     "version": "0.1.0",
     "main": "admin/views/assets/javascripts/app.js",
     "license": "MIT",
     "repository": {
         "type": "git",
-        "url": "https://github.com/aghape/qor.git"
+        "url": "https://github.com/aghape/core.git"
     },
     "keywords": [
-        "qor",
+        "aghape",
         "cms",
         "go"
     ],

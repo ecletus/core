@@ -3,7 +3,7 @@ package resource
 import (
 	"reflect"
 
-	"github.com/aghape/aghape"
+	"github.com/aghape/core"
 )
 
 // MetaValues is slice of MetaValue
@@ -37,7 +37,7 @@ type MetaValue struct {
 	error      error
 }
 
-func decodeMetaValuesToField(res Resourcer, field reflect.Value, metaValue *MetaValue, context *qor.Context) (err error) {
+func decodeMetaValuesToField(res Resourcer, field reflect.Value, metaValue *MetaValue, context *core.Context) (err error) {
 	//if field.Kind() == reflect.Struct {
 	if metaValue.Meta.IsInline() {
 		typ := field.Type()

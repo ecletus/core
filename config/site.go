@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"errors"
 	"strings"
-	"github.com/aghape/aghape/utils/str"
+	"github.com/aghape/core/utils/str"
 	"github.com/aghape/oss/ftp"
 	"github.com/moisespsena/go-assetfs"
 )

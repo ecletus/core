@@ -27,3 +27,5 @@ __*
 .sass-cache
 npm-debug.log
 .*
+
+package-lock.json

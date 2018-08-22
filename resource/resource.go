@@ -11,9 +11,9 @@ import (
 	"github.com/jinzhu/inflection"
 	"github.com/moisespsena/go-edis"
 	"github.com/moisespsena/go-i18n-modular/i18nmod"
-	"github.com/aghape/aghape"
-	"github.com/aghape/aghape/config"
-	"github.com/aghape/aghape/utils"
+	"github.com/aghape/core"
+	"github.com/aghape/core/config"
+	"github.com/aghape/core/utils"
 	"github.com/aghape/roles"
 )
 
@@ -57,18 +57,18 @@ type Resourcer interface {
 	GetResource() *Resource
 	GetPrimaryFields() []*aorm.StructField
 	GetMetas([]string) []Metaor
-	FindMany(result interface{}, context *qor.Context) error
-	FindOne(result interface{}, metaValues *MetaValues, context *qor.Context) error
-	CallFindManyLayout(r Resourcer, result interface{}, context *qor.Context, layout LayoutInterface) error
-	CallFindOneLayout(r Resourcer, result interface{}, metaValues *MetaValues, context *qor.Context, layout LayoutInterface) error
-	FindManyLayout(result interface{}, context *qor.Context, layout LayoutInterface) error
-	FindOneLayout(result interface{}, metaValues *MetaValues, context *qor.Context, layout LayoutInterface) error
-	CallSave(Resourcer, interface{}, *qor.Context) error
-	CallDelete(Resourcer, interface{}, *qor.Context) error
-	Save(interface{}, *qor.Context) error
-	Delete(interface{}, *qor.Context) error
+	FindMany(result interface{}, context *core.Context) error
+	FindOne(result interface{}, metaValues *MetaValues, context *core.Context) error
+	CallFindManyLayout(r Resourcer, result interface{}, context *core.Context, layout LayoutInterface) error
+	CallFindOneLayout(r Resourcer, result interface{}, metaValues *MetaValues, context *core.Context, layout LayoutInterface) error
+	FindManyLayout(result interface{}, context *core.Context, layout LayoutInterface) error
+	FindOneLayout(result interface{}, metaValues *MetaValues, context *core.Context, layout LayoutInterface) error
+	CallSave(Resourcer, interface{}, *core.Context) error
+	CallDelete(Resourcer, interface{}, *core.Context) error
+	Save(interface{}, *core.Context) error
+	Delete(interface{}, *core.Context) error
 	NewSlice() interface{}
-	NewStruct(site ...qor.SiteInterface) interface{}
+	NewStruct(site ...core.SiteInterface) interface{}
 	GetPathLevel() int
 	SetParent(parent Resourcer, fieldName string)
 	GetParentResource() Resourcer
@@ -80,7 +80,7 @@ type Resourcer interface {
 	ParamIDName() string
 	Inline(inline ...*InlineResourcer)
 	GetInlines() *Inlines
-	DBSave(resourcer Resourcer, result interface{}, context *qor.Context, parent *Parent) error
+	DBSave(resourcer Resourcer, result interface{}, context *core.Context, parent *Parent) error
 	GetBeforeFindCallbacks() map[string]*Callback
 	GetFakeScope() *aorm.Scope
 }
@@ -123,7 +123,7 @@ type ToBasicInterface interface {
 	GetBasicValue() *BasicValue
 }
 
-type CalbackFunc func(resourcer Resourcer, value interface{}, context *qor.Context, parent *Parent) error
+type CalbackFunc func(resourcer Resourcer, value interface{}, context *core.Context, parent *Parent) error
 
 type Callback struct {
 	Name    string
@@ -132,28 +132,28 @@ type Callback struct {
 
 type LayoutInterface interface {
 	GetType() interface{}
-	GetMany() func(Resourcer, interface{}, *qor.Context) error
-	GetOne() func(Resourcer, interface{}, *MetaValues, *qor.Context) error
-	GetPrepare() func(Resourcer, *qor.Context)
+	GetMany() func(Resourcer, interface{}, *core.Context) error
+	GetOne() func(Resourcer, interface{}, *MetaValues, *core.Context) error
+	GetPrepare() func(Resourcer, *core.Context)
 }
 
 type Layout struct {
 	Type    interface{}
-	Many    func(Resourcer, interface{}, *qor.Context) error
-	One     func(Resourcer, interface{}, *MetaValues, *qor.Context) error
-	Prepare func(Resourcer, *qor.Context)
+	Many    func(Resourcer, interface{}, *core.Context) error
+	One     func(Resourcer, interface{}, *MetaValues, *core.Context) error
+	Prepare func(Resourcer, *core.Context)
 }
 
 func (l *Layout) GetType() interface{} {
 	return l.Type
 }
-func (l *Layout) GetMany() func(Resourcer, interface{}, *qor.Context) error {
+func (l *Layout) GetMany() func(Resourcer, interface{}, *core.Context) error {
 	return l.Many
 }
-func (l *Layout) GetOne() func(Resourcer, interface{}, *MetaValues, *qor.Context) error {
+func (l *Layout) GetOne() func(Resourcer, interface{}, *MetaValues, *core.Context) error {
 	return l.One
 }
-func (l *Layout) GetPrepare() func(Resourcer, *qor.Context) {
+func (l *Layout) GetPrepare() func(Resourcer, *core.Context) {
 	return l.Prepare
 }
 
@@ -208,17 +208,17 @@ type Resource struct {
 	I18nPrefix                string
 	Value                     interface{}
 	PrimaryFields             []*aorm.StructField
-	FindManyHandler           func(Resourcer, interface{}, *qor.Context) error
-	FindOneHandler            func(Resourcer, interface{}, *MetaValues, *qor.Context) error
-	SaveHandler               func(Resourcer, interface{}, *qor.Context) error
-	DeleteHandler             func(Resourcer, interface{}, *qor.Context) error
+	FindManyHandler           func(Resourcer, interface{}, *core.Context) error
+	FindOneHandler            func(Resourcer, interface{}, *MetaValues, *core.Context) error
+	SaveHandler               func(Resourcer, interface{}, *core.Context) error
+	DeleteHandler             func(Resourcer, interface{}, *core.Context) error
 	Permission                *roles.Permission
-	Validators                []func(interface{}, *MetaValues, *qor.Context) error
-	Processors                []func(interface{}, *MetaValues, *qor.Context) error
+	Validators                []func(interface{}, *MetaValues, *core.Context) error
+	Processors                []func(interface{}, *MetaValues, *core.Context) error
 	primaryField              *aorm.Field
-	newStructCallbacks        []func(obj interface{}, site qor.SiteInterface)
+	newStructCallbacks        []func(obj interface{}, site core.SiteInterface)
 	FakeScope                 *aorm.Scope
-	DefaultFilters            []func(context *qor.Context, db *aorm.DB) *aorm.DB
+	DefaultFilters            []func(context *core.Context, db *aorm.DB) *aorm.DB
 	PathLevel                 int
 	ParentFieldName           string
 	ParentFieldDBName         string
@@ -268,12 +268,12 @@ func New(value interface{}, id, uid string) *Resource {
 			Name:               name,
 			PluralName:         inflection.Plural(name),
 			PkgPath:            pkgPath,
-			FakeScope:          qor.FakeDB.NewScope(value),
+			FakeScope:          core.FakeDB.NewScope(value),
 			Data:               make(config.OtherConfig),
 			Inlines:            &Inlines{ByFieldName: make(map[string]*InlineResourcer)},
 			I18nPrefix:         i18nmod.PkgToGroup(pkg, groupSuffix...) + "." + utils.ModelType(value).Name(),
 			Layouts:            make(map[string]*Layout),
-			newStructCallbacks: []func(obj interface{}, site qor.SiteInterface){},
+			newStructCallbacks: []func(obj interface{}, site core.SiteInterface){},
 		}
 	)
 
@@ -432,12 +432,12 @@ func (res *Resource) GetPathLevel() int {
 	return res.PathLevel
 }
 
-func (res *Resource) NewStructCallback(callbacks ...func(obj interface{}, site qor.SiteInterface)) *Resource {
+func (res *Resource) NewStructCallback(callbacks ...func(obj interface{}, site core.SiteInterface)) *Resource {
 	res.newStructCallbacks = append(res.newStructCallbacks, callbacks...)
 	return res
 }
 
-func (res *Resource) DefaultFilter(fns ...func(context *qor.Context, db *aorm.DB) *aorm.DB) {
+func (res *Resource) DefaultFilter(fns ...func(context *core.Context, db *aorm.DB) *aorm.DB) {
 	res.DefaultFilters = append(res.DefaultFilters, fns...)
 }
 
@@ -471,17 +471,17 @@ func (res *Resource) GetResource() *Resource {
 }
 
 // AddValidator add validator to resource, it will invoked when creating, updating, and will rollback the change if validator return any error
-func (res *Resource) AddValidator(fc func(interface{}, *MetaValues, *qor.Context) error) {
+func (res *Resource) AddValidator(fc func(interface{}, *MetaValues, *core.Context) error) {
 	res.Validators = append(res.Validators, fc)
 }
 
 // AddProcessor add processor to resource, it is used to process data before creating, updating, will rollback the change if it return any error
-func (res *Resource) AddProcessor(fc func(interface{}, *MetaValues, *qor.Context) error) {
+func (res *Resource) AddProcessor(fc func(interface{}, *MetaValues, *core.Context) error) {
 	res.Processors = append(res.Processors, fc)
 }
 
 // NewStruct initialize a struct for the Resource
-func (res *Resource) NewStruct(site ...qor.SiteInterface) interface{} {
+func (res *Resource) NewStruct(site ...core.SiteInterface) interface{} {
 	if res.Value == nil {
 		return nil
 	}
@@ -495,7 +495,7 @@ func (res *Resource) NewStruct(site ...qor.SiteInterface) interface{} {
 
 	if len(site) != 0 && site[0] != nil {
 		if init, ok := obj.(interface {
-			Init(siteInterface qor.SiteInterface)
+			Init(siteInterface core.SiteInterface)
 		}); ok {
 			init.Init(site[0])
 		}
@@ -526,7 +526,7 @@ func (res *Resource) GetMetas([]string) []Metaor {
 }
 
 // HasPermission check permission of resource
-func (res *Resource) HasPermission(mode roles.PermissionMode, context *qor.Context) bool {
+func (res *Resource) HasPermission(mode roles.PermissionMode, context *core.Context) bool {
 	if res == nil || res.Permission == nil {
 		return true
 	}

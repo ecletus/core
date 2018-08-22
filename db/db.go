@@ -12,7 +12,7 @@ import (
 	"time"
 	"io"
 	"bufio"
-	qorconfig "github.com/aghape/aghape/config"
+	qorconfig "github.com/aghape/core/config"
 	_ "github.com/moisespsena-go/aorm/dialects/mysql"
 	_ "github.com/moisespsena-go/aorm/dialects/postgres"
 	_ "github.com/moisespsena-go/aorm/dialects/sqlite"

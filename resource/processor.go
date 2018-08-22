@@ -6,8 +6,8 @@ import (
 	"reflect"
 
 	"github.com/moisespsena-go/aorm"
-	"github.com/aghape/aghape"
-	"github.com/aghape/aghape/utils"
+	"github.com/aghape/core"
+	"github.com/aghape/core/utils"
 	"github.com/aghape/roles"
 )
 
@@ -17,14 +17,14 @@ var ErrProcessorSkipLeft = errors.New("resource: skip left")
 type processor struct {
 	Result     interface{}
 	Resource   Resourcer
-	Context    *qor.Context
+	Context    *core.Context
 	MetaValues *MetaValues
 	SkipLeft   bool
 	newRecord  bool
 }
 
 // DecodeToResource decode meta values to resource result
-func DecodeToResource(res Resourcer, result interface{}, metaValues *MetaValues, context *qor.Context) *processor {
+func DecodeToResource(res Resourcer, result interface{}, metaValues *MetaValues, context *core.Context) *processor {
 	scope := &aorm.Scope{Value: result}
 	return &processor{Resource: res, Result: result, Context: context, MetaValues: metaValues, newRecord: scope.PrimaryKeyZero()}
 }
@@ -50,7 +50,7 @@ func (processor *processor) Initialize() error {
 }
 
 func (processor *processor) Validate() error {
-	var errors qor.Errors
+	var errors core.Errors
 	if processor.checkSkipLeft() {
 		return nil
 	}
@@ -115,7 +115,7 @@ func (processor *processor) decode() (errors []error) {
 }
 
 func (processor *processor) Commit() error {
-	var errors qor.Errors
+	var errors core.Errors
 	errors.AddError(processor.decode()...)
 	if processor.checkSkipLeft(errors.GetErrors()...) {
 		return nil
@@ -133,7 +133,7 @@ func (processor *processor) Commit() error {
 }
 
 func (processor *processor) Start() error {
-	var errors qor.Errors
+	var errors core.Errors
 	processor.Initialize()
 	if errors.AddError(processor.Validate()); !errors.HasError() {
 		errors.AddError(processor.Commit())

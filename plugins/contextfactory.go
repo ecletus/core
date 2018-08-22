@@ -3,7 +3,7 @@ package plugins
 import (
 	"github.com/moisespsena/go-i18n-modular/i18nmod"
 	"github.com/aghape/plug"
-	"github.com/aghape/aghape"
+	"github.com/aghape/core"
 )
 
 type ContextFactoryPlugin struct {
@@ -20,6 +20,6 @@ func (p *ContextFactoryPlugin) ProvideOptions() []string {
 
 func (p *ContextFactoryPlugin) Init(options *plug.Options) {
 	translator := options.GetInterface(p.TranslatorKey).(*i18nmod.Translator)
-	cf := qor.NewContextFactory(translator)
+	cf := core.NewContextFactory(translator)
 	options.Set(p.ContextFactoryKey, cf)
 }

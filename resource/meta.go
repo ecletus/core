@@ -4,8 +4,8 @@ import (
 	"reflect"
 	"strings"
 	"github.com/moisespsena-go/aorm"
-	"github.com/aghape/aghape"
-	"github.com/aghape/aghape/utils"
+	"github.com/aghape/core"
+	"github.com/aghape/core/utils"
 	"github.com/aghape/roles"
 )
 
@@ -17,15 +17,15 @@ type MetaScanner interface {
 type Metaor interface {
 	GetName() string
 	GetFieldName() string
-	GetSetter() func(resource interface{}, metaValue *MetaValue, context *qor.Context) error
-	GetFormattedValuer() func(recorde interface{}, context *qor.Context) interface{}
-	GetValuer() func(recorde interface{}, context *qor.Context) interface{}
-	GetContextResourcer() func(meta Metaor, context *qor.Context) Resourcer
+	GetSetter() func(resource interface{}, metaValue *MetaValue, context *core.Context) error
+	GetFormattedValuer() func(recorde interface{}, context *core.Context) interface{}
+	GetValuer() func(recorde interface{}, context *core.Context) interface{}
+	GetContextResourcer() func(meta Metaor, context *core.Context) Resourcer
 	GetResource() Resourcer
 	GetMetas() []Metaor
-	GetContextMetas(recorde interface{}, context *qor.Context) []Metaor
-	GetContextResource(context *qor.Context) Resourcer
-	HasPermission(roles.PermissionMode, *qor.Context) bool
+	GetContextMetas(recorde interface{}, context *core.Context) []Metaor
+	GetContextResource(context *core.Context) Resourcer
+	HasPermission(roles.PermissionMode, *core.Context) bool
 	IsInline() bool
 }
 
@@ -81,10 +81,10 @@ type Meta struct {
 	Alias            *MetaName
 	FieldName        string
 	FieldStruct      *aorm.StructField
-	ContextResourcer func(meta Metaor, context *qor.Context) Resourcer
-	Setter           func(resource interface{}, metaValue *MetaValue, context *qor.Context) error
-	Valuer           func(interface{}, *qor.Context) interface{}
-	FormattedValuer  func(interface{}, *qor.Context) interface{}
+	ContextResourcer func(meta Metaor, context *core.Context) Resourcer
+	Setter           func(resource interface{}, metaValue *MetaValue, context *core.Context) error
+	Valuer           func(interface{}, *core.Context) interface{}
+	FormattedValuer  func(interface{}, *core.Context) interface{}
 	Config           MetaConfigInterface
 	BaseResource     Resourcer
 	Resource         Resourcer
@@ -113,18 +113,18 @@ func (meta *Meta) GetBaseResource() Resourcer {
 }
 
 // GetContextResource get resource from meta
-func (meta *Meta) GetContextResourcer() func(meta Metaor, context *qor.Context) Resourcer {
+func (meta *Meta) GetContextResourcer() func(meta Metaor, context *core.Context) Resourcer {
 	return meta.ContextResourcer
 }
 
-func (meta *Meta) GetContextResource(context *qor.Context) Resourcer {
+func (meta *Meta) GetContextResource(context *core.Context) Resourcer {
 	if meta.ContextResourcer != nil {
 		return meta.ContextResourcer(meta, context)
 	}
 	return meta.Resource
 }
 
-func (meta *Meta) GetContextMetas(recort interface{}, context *qor.Context) (metas []Metaor) {
+func (meta *Meta) GetContextMetas(recort interface{}, context *core.Context) (metas []Metaor) {
 	return meta.GetContextResource(context).GetMetas([]string{})
 }
 
@@ -147,27 +147,27 @@ func (meta *Meta) SetFieldName(name string) {
 }
 
 // GetSetter get setter from meta
-func (meta Meta) GetSetter() func(resource interface{}, metaValue *MetaValue, context *qor.Context) error {
+func (meta Meta) GetSetter() func(resource interface{}, metaValue *MetaValue, context *core.Context) error {
 	return meta.Setter
 }
 
 // SetSetter set setter to meta
-func (meta *Meta) SetSetter(fc func(resource interface{}, metaValue *MetaValue, context *qor.Context) error) {
+func (meta *Meta) SetSetter(fc func(resource interface{}, metaValue *MetaValue, context *core.Context) error) {
 	meta.Setter = fc
 }
 
 // GetValuer get valuer from meta
-func (meta *Meta) GetValuer() func(interface{}, *qor.Context) interface{} {
+func (meta *Meta) GetValuer() func(interface{}, *core.Context) interface{} {
 	return meta.Valuer
 }
 
 // SetValuer set valuer for meta
-func (meta *Meta) SetValuer(fc func(interface{}, *qor.Context) interface{}) {
+func (meta *Meta) SetValuer(fc func(interface{}, *core.Context) interface{}) {
 	meta.Valuer = fc
 }
 
 // GetFormattedValuer get formatted valuer from meta
-func (meta *Meta) GetFormattedValuer() func(interface{}, *qor.Context) interface{} {
+func (meta *Meta) GetFormattedValuer() func(interface{}, *core.Context) interface{} {
 	if meta.FormattedValuer != nil {
 		return meta.FormattedValuer
 	}
@@ -175,12 +175,12 @@ func (meta *Meta) GetFormattedValuer() func(interface{}, *qor.Context) interface
 }
 
 // SetFormattedValuer set formatted valuer for meta
-func (meta *Meta) SetFormattedValuer(fc func(interface{}, *qor.Context) interface{}) {
+func (meta *Meta) SetFormattedValuer(fc func(interface{}, *core.Context) interface{}) {
 	meta.FormattedValuer = fc
 }
 
 // HasPermission check has permission or not
-func (meta *Meta) HasPermission(mode roles.PermissionMode, context *qor.Context) bool {
+func (meta *Meta) HasPermission(mode roles.PermissionMode, context *core.Context) bool {
 	if meta.Permission == nil {
 		return true
 	}
@@ -251,7 +251,7 @@ func (meta *Meta) Initialize() error {
 	return nil
 }
 
-func getNestedModel(value interface{}, fieldName string, context *qor.Context) interface{} {
+func getNestedModel(value interface{}, fieldName string, context *core.Context) interface{} {
 	model := reflect.Indirect(reflect.ValueOf(value))
 	fields := strings.Split(fieldName, ".")
 	for _, field := range fields[:len(fields)-1] {
