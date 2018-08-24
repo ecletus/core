@@ -3,8 +3,9 @@ package resource
 import (
 	"strings"
 
-	"github.com/moisespsena/go-edis"
 	"github.com/aghape/core"
+	"github.com/moisespsena/go-edis"
+	"github.com/moisespsena/go-error-wrap"
 )
 
 type DBActionEventName string
@@ -36,13 +37,12 @@ const (
 
 type DBEvent struct {
 	edis.EventInterface
-	Resource Resourcer
-	Action   DBActionEventName
-	Recorde  interface{}
-	Context  *core.Context
-	OriginalContext  *core.Context
-	Parent   *Parent
-	DBError  error
+	Resource        Resourcer
+	Action          DBActionEventName
+	Recorde         interface{}
+	Context         *core.Context
+	OriginalContext *core.Context
+	DBError         error
 }
 
 func (e DBEvent) count() *DBEvent {
@@ -97,7 +97,16 @@ func (res *Resource) OnDBAction(cb func(e *DBEvent), action ...DBActionEventName
 	return
 }
 
-func (res *Resource) triggerDBAction(e *DBEvent) error {
+func (res *Resource) triggerDBAction(e *DBEvent, dispatchers ...edis.EventDispatcherInterface) (err error) {
 	e.EventInterface = edis.NewEvent("db:" + e.Action.String())
-	return res.Trigger(e)
+	if err = res.Trigger(e); err != nil {
+		return err
+	}
+
+	for i, d := range dispatchers {
+		if err = d.Trigger(e); err != nil {
+			return errwrap.Wrap(err, "Dispatcher %d", i)
+		}
+	}
+	return nil
 }

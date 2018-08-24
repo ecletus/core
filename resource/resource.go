@@ -7,48 +7,18 @@ import (
 	"reflect"
 	"strings"
 
-	"github.com/moisespsena-go/aorm"
-	"github.com/jinzhu/inflection"
-	"github.com/moisespsena/go-edis"
-	"github.com/moisespsena/go-i18n-modular/i18nmod"
 	"github.com/aghape/core"
 	"github.com/aghape/core/config"
 	"github.com/aghape/core/utils"
 	"github.com/aghape/roles"
+	"github.com/jinzhu/inflection"
+	"github.com/moisespsena-go/aorm"
+	"github.com/moisespsena/go-edis"
+	"github.com/moisespsena/go-i18n-modular/i18nmod"
 )
 
 const DEFAULT_LAYOUT = "default"
 const BASIC_LAYOUT = "basic"
-
-type InlineResourcer struct {
-	Resource            Resourcer
-	FieldName           string
-	Slice               bool
-	Options             map[interface{}]interface{}
-	fieldIndex          []int
-	keyFieldsIndex      [][]int
-	BeforeSaveCallbacks []CalbackFunc
-	AfterSaveCallbacks  []CalbackFunc
-	Index               int
-}
-
-func (ir *InlineResourcer) BeforeSave(callbacks ...CalbackFunc) *InlineResourcer {
-	ir.BeforeSaveCallbacks = append(ir.BeforeSaveCallbacks, callbacks...)
-	return ir
-}
-
-func (ir *InlineResourcer) AfterSave(callbacks ...CalbackFunc) *InlineResourcer {
-	ir.AfterSaveCallbacks = append(ir.AfterSaveCallbacks, callbacks...)
-	return ir
-}
-
-type Parent struct {
-	Resource Resourcer
-	Index    int
-	Parent   *Parent
-	Record   interface{}
-	Inline   *InlineResourcer
-}
 
 // Resourcer interface
 type Resourcer interface {
@@ -57,16 +27,6 @@ type Resourcer interface {
 	GetResource() *Resource
 	GetPrimaryFields() []*aorm.StructField
 	GetMetas([]string) []Metaor
-	FindMany(result interface{}, context *core.Context) error
-	FindOne(result interface{}, metaValues *MetaValues, context *core.Context) error
-	CallFindManyLayout(r Resourcer, result interface{}, context *core.Context, layout LayoutInterface) error
-	CallFindOneLayout(r Resourcer, result interface{}, metaValues *MetaValues, context *core.Context, layout LayoutInterface) error
-	FindManyLayout(result interface{}, context *core.Context, layout LayoutInterface) error
-	FindOneLayout(result interface{}, metaValues *MetaValues, context *core.Context, layout LayoutInterface) error
-	CallSave(Resourcer, interface{}, *core.Context) error
-	CallDelete(Resourcer, interface{}, *core.Context) error
-	Save(interface{}, *core.Context) error
-	Delete(interface{}, *core.Context) error
 	NewSlice() interface{}
 	NewStruct(site ...core.SiteInterface) interface{}
 	GetPathLevel() int
@@ -78,11 +38,15 @@ type Resourcer interface {
 	ToParam() string
 	ParamIDPattern() string
 	ParamIDName() string
-	Inline(inline ...*InlineResourcer)
-	GetInlines() *Inlines
-	DBSave(resourcer Resourcer, result interface{}, context *core.Context, parent *Parent) error
 	GetBeforeFindCallbacks() map[string]*Callback
 	GetFakeScope() *aorm.Scope
+	HasPermission(mode roles.PermissionMode, context *core.Context) bool
+	BasicValue(recorde interface{}) BasicValue
+	Crud(ctx *core.Context) *CRUD
+	CrudDB(db *aorm.DB) *CRUD
+	Layout(name string, layout LayoutInterface)
+	GetLayoutOrDefault(name string) LayoutInterface
+	GetLayout(name string, defaul ...string) LayoutInterface
 }
 
 // ConfigureResourceBeforeInitializeInterface if a struct implemented this interface, it will be called before everything when create a resource with the struct
@@ -123,113 +87,41 @@ type ToBasicInterface interface {
 	GetBasicValue() *BasicValue
 }
 
-type CalbackFunc func(resourcer Resourcer, value interface{}, context *core.Context, parent *Parent) error
+type CalbackFunc func(resourcer Resourcer, value interface{}, context *core.Context) error
 
 type Callback struct {
 	Name    string
 	Handler CalbackFunc
 }
 
-type LayoutInterface interface {
-	GetType() interface{}
-	GetMany() func(Resourcer, interface{}, *core.Context) error
-	GetOne() func(Resourcer, interface{}, *MetaValues, *core.Context) error
-	GetPrepare() func(Resourcer, *core.Context)
-}
-
-type Layout struct {
-	Type    interface{}
-	Many    func(Resourcer, interface{}, *core.Context) error
-	One     func(Resourcer, interface{}, *MetaValues, *core.Context) error
-	Prepare func(Resourcer, *core.Context)
-}
-
-func (l *Layout) GetType() interface{} {
-	return l.Type
-}
-func (l *Layout) GetMany() func(Resourcer, interface{}, *core.Context) error {
-	return l.Many
-}
-func (l *Layout) GetOne() func(Resourcer, interface{}, *MetaValues, *core.Context) error {
-	return l.One
-}
-func (l *Layout) GetPrepare() func(Resourcer, *core.Context) {
-	return l.Prepare
-}
-
-func (l *Layout) NewStruct() interface{} {
-	return reflect.New(reflect.Indirect(reflect.ValueOf(l.Type)).Type()).Interface()
-}
-
-func (l *Layout) NewSlice() interface{} {
-	sliceType := reflect.SliceOf(reflect.TypeOf(l.Type))
-	slice := reflect.MakeSlice(sliceType, 0, 0)
-	slicePtr := reflect.New(sliceType)
-	slicePtr.Elem().Set(slice)
-	return slicePtr.Interface()
-}
-
-type Inlines struct {
-	Items       []*InlineResourcer
-	ByFieldName map[string]*InlineResourcer
-	Len         int
-}
-
-func (inlines *Inlines) add(inline *InlineResourcer) {
-	inline.Index = len(inlines.Items)
-	inlines.Items = append(inlines.Items, inline)
-	inlines.ByFieldName[inline.FieldName] = inline
-	inlines.Len++
-}
-
-func (inlines *Inlines) Has(fieldName string) bool {
-	_, ok := inlines.ByFieldName[fieldName]
-	return ok
-}
-
-func (inlines *Inlines) Each(f func(inline *InlineResourcer) bool) bool {
-	for _, inline := range inlines.Items {
-		if !f(inline) {
-			return false
-		}
-	}
-	return true
-}
-
 // Resource is a struct that including basic definition of qor resource
 type Resource struct {
 	edis.EventDispatcher
-	UID                       string
-	ID                        string
-	Name                      string
-	PluralName                string
-	PKG                       string
-	PkgPath                   string
-	I18nPrefix                string
-	Value                     interface{}
-	PrimaryFields             []*aorm.StructField
-	FindManyHandler           func(Resourcer, interface{}, *core.Context) error
-	FindOneHandler            func(Resourcer, interface{}, *MetaValues, *core.Context) error
-	SaveHandler               func(Resourcer, interface{}, *core.Context) error
-	DeleteHandler             func(Resourcer, interface{}, *core.Context) error
-	Permission                *roles.Permission
-	Validators                []func(interface{}, *MetaValues, *core.Context) error
-	Processors                []func(interface{}, *MetaValues, *core.Context) error
-	primaryField              *aorm.Field
-	newStructCallbacks        []func(obj interface{}, site core.SiteInterface)
-	FakeScope                 *aorm.Scope
-	DefaultFilters            []func(context *core.Context, db *aorm.DB) *aorm.DB
-	PathLevel                 int
-	ParentFieldName           string
-	ParentFieldDBName         string
-	ParentFieldVirtual        bool
-	parentResource            Resourcer
-	Data                      config.OtherConfig
-	beforeSaveCallbacks       map[string]*Callback
-	beforeFindCallbacks       map[string]*Callback
-	Layouts                   map[string]*Layout
-	TransformToBasicValueFunc func(record interface{}) BasicValue
-	Inlines                   *Inlines
+	UID                 string
+	ID                  string
+	Name                string
+	PluralName          string
+	PKG                 string
+	PkgPath             string
+	I18nPrefix          string
+	Value               interface{}
+	PrimaryFields       []*aorm.StructField
+	Permission          *roles.Permission
+	Validators          []func(interface{}, *MetaValues, *core.Context) error
+	Processors          []func(interface{}, *MetaValues, *core.Context) error
+	primaryField        *aorm.Field
+	newStructCallbacks  []func(obj interface{}, site core.SiteInterface)
+	FakeScope           *aorm.Scope
+	DefaultFilters      []func(context *core.Context, db *aorm.DB) *aorm.DB
+	PathLevel           int
+	ParentFieldName     string
+	ParentFieldDBName   string
+	ParentFieldVirtual  bool
+	parentResource      Resourcer
+	Data                config.OtherConfig
+	beforeSaveCallbacks map[string]*Callback
+	beforeFindCallbacks map[string]*Callback
+	Layouts             map[string]LayoutInterface
 }
 
 // New initialize qor resource
@@ -270,18 +162,19 @@ func New(value interface{}, id, uid string) *Resource {
 			PkgPath:            pkgPath,
 			FakeScope:          core.FakeDB.NewScope(value),
 			Data:               make(config.OtherConfig),
-			Inlines:            &Inlines{ByFieldName: make(map[string]*InlineResourcer)},
 			I18nPrefix:         i18nmod.PkgToGroup(pkg, groupSuffix...) + "." + utils.ModelType(value).Name(),
-			Layouts:            make(map[string]*Layout),
+			Layouts:            make(map[string]LayoutInterface),
 			newStructCallbacks: []func(obj interface{}, site core.SiteInterface){},
 		}
 	)
 
 	res.SetDispatcher(res)
-	res.SaveHandler = res.saveHandler
-	res.DeleteHandler = res.deleteHandler
 	res.SetPrimaryFields()
 	return res
+}
+
+func (res *Resource) BasicValue(record interface{}) BasicValue {
+	return record.(BasicValue)
 }
 
 func (res *Resource) GetPrimaryFields() []*aorm.StructField {
@@ -292,56 +185,15 @@ func (res *Resource) GetPrivateLabel() string {
 	return res.Name
 }
 
-func (res *Resource) Inline(inline ...*InlineResourcer) {
-	value := reflect.TypeOf(res.Value).Elem()
-	for _, i := range inline {
-		if field, ok := value.FieldByName(i.FieldName); ok {
-			i.fieldIndex = field.Index
-			keyFields := i.Resource.GetPrimaryFields()
-			fmt.Println("FIELD: ", field.Name, field.Index)
-			if len(keyFields) == 1 {
-				fmt.Println("FK KEY FIELD: ", keyFields[0].Name, keyFields[0].StructIndex)
-				if keyField, ok := value.FieldByName(i.FieldName + "ID"); ok {
-					fmt.Println("KEY FIELD: ", keyField.Name, keyField.Index)
-					i.keyFieldsIndex = append(i.keyFieldsIndex, keyField.Index)
-				} else {
-					panic(fmt.Errorf("Register inline failed: Struct %v does not have field %q", value.String(), i.FieldName+"ID"))
-				}
-			} else {
-				for _, rKeyField := range keyFields {
-					keyFieldName := i.FieldName + "Id" + rKeyField.Name
-					if keyField, ok := value.FieldByName(keyFieldName); ok {
-						i.keyFieldsIndex = append(i.keyFieldsIndex, keyField.Index)
-					} else {
-						panic(fmt.Errorf("Register inline failed: Struct %v does not have field %q", value.String(), keyFieldName))
-					}
-				}
-			}
-		} else {
-			panic(fmt.Errorf("Register inline failed: Struct %v does not have field %q", value.String(), i.FieldName))
-		}
-
-		if i.Options == nil {
-			i.Options = make(map[interface{}]interface{})
-		}
-
-		res.Inlines.add(i)
-	}
-}
-
-func (res *Resource) GetInlines() *Inlines {
-	return res.Inlines
-}
-
-func (res *Resource) Layout(name string, layout *Layout) {
+func (res *Resource) Layout(name string, layout LayoutInterface) {
 	res.Layouts[name] = layout
 }
 
-func (res *Resource) GetLayoutOrDefault(name string) *Layout {
+func (res *Resource) GetLayoutOrDefault(name string) LayoutInterface {
 	return res.GetLayout(name, DEFAULT_LAYOUT)
 }
 
-func (res *Resource) GetLayout(name string, defaul ...string) *Layout {
+func (res *Resource) GetLayout(name string, defaul ...string) LayoutInterface {
 	if v, ok := res.Layouts[name]; ok {
 		return v
 	}
@@ -536,4 +388,22 @@ func (res *Resource) HasPermission(mode roles.PermissionMode, context *core.Cont
 		roles = append(roles, role)
 	}
 	return res.Permission.HasPermission(mode, roles...)
+}
+
+// ToPrimaryQueryParams to primary query params
+func (res *Resource) ToPrimaryQueryParams(primaryValue string) (string, []interface{}) {
+	return ToPrimaryQueryParams(res, primaryValue)
+}
+
+// ToPrimaryQueryParamsFromMetaValue to primary query params from meta values
+func (res *Resource) ToPrimaryQueryParamsFromMetaValue(metaValues *MetaValues) (string, []interface{}) {
+	return ToPrimaryQueryParamsFromMetaValue(res, metaValues)
+}
+
+func (res *Resource) Crud(ctx *core.Context) *CRUD {
+	return NewCrud(res, ctx)
+}
+
+func (res *Resource) CrudDB(db *aorm.DB) *CRUD {
+	return NewCrud(res, &core.Context{DB: db})
 }

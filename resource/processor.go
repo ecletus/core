@@ -5,10 +5,10 @@ import (
 	"errors"
 	"reflect"
 
-	"github.com/moisespsena-go/aorm"
 	"github.com/aghape/core"
 	"github.com/aghape/core/utils"
 	"github.com/aghape/roles"
+	"github.com/moisespsena-go/aorm"
 )
 
 // ErrProcessorSkipLeft skip left processors error, if returned this error in validation, before callbacks, then qor will stop process following processors
@@ -44,7 +44,7 @@ func (processor *processor) checkSkipLeft(errs ...error) bool {
 }
 
 func (processor *processor) Initialize() error {
-	err := processor.Resource.FindOne(processor.Result, processor.MetaValues, processor.Context)
+	err := processor.Resource.Crud(processor.Context).SetMetaValues(processor.MetaValues).FindOne(processor.Result)
 	processor.checkSkipLeft(err)
 	return err
 }
