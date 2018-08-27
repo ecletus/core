@@ -38,7 +38,6 @@ type Resourcer interface {
 	ToParam() string
 	ParamIDPattern() string
 	ParamIDName() string
-	GetBeforeFindCallbacks() map[string]*Callback
 	GetFakeScope() *aorm.Scope
 	HasPermission(mode roles.PermissionMode, context *core.Context) bool
 	BasicValue(recorde interface{}) BasicValue
@@ -97,31 +96,29 @@ type Callback struct {
 // Resource is a struct that including basic definition of qor resource
 type Resource struct {
 	edis.EventDispatcher
-	UID                 string
-	ID                  string
-	Name                string
-	PluralName          string
-	PKG                 string
-	PkgPath             string
-	I18nPrefix          string
-	Value               interface{}
-	PrimaryFields       []*aorm.StructField
-	Permission          *roles.Permission
-	Validators          []func(interface{}, *MetaValues, *core.Context) error
-	Processors          []func(interface{}, *MetaValues, *core.Context) error
-	primaryField        *aorm.Field
-	newStructCallbacks  []func(obj interface{}, site core.SiteInterface)
-	FakeScope           *aorm.Scope
-	DefaultFilters      []func(context *core.Context, db *aorm.DB) *aorm.DB
-	PathLevel           int
-	ParentFieldName     string
-	ParentFieldDBName   string
-	ParentFieldVirtual  bool
-	parentResource      Resourcer
-	Data                config.OtherConfig
-	beforeSaveCallbacks map[string]*Callback
-	beforeFindCallbacks map[string]*Callback
-	Layouts             map[string]LayoutInterface
+	UID                string
+	ID                 string
+	Name               string
+	PluralName         string
+	PKG                string
+	PkgPath            string
+	I18nPrefix         string
+	Value              interface{}
+	PrimaryFields      []*aorm.StructField
+	Permission         *roles.Permission
+	Validators         []func(interface{}, *MetaValues, *core.Context) error
+	Processors         []func(interface{}, *MetaValues, *core.Context) error
+	primaryField       *aorm.Field
+	newStructCallbacks []func(obj interface{}, site core.SiteInterface)
+	FakeScope          *aorm.Scope
+	DefaultFilters     []func(context *core.Context, db *aorm.DB) *aorm.DB
+	PathLevel          int
+	ParentFieldName    string
+	ParentFieldDBName  string
+	ParentFieldVirtual bool
+	parentResource     Resourcer
+	Data               config.OtherConfig
+	Layouts            map[string]LayoutInterface
 }
 
 // New initialize qor resource
@@ -209,28 +206,6 @@ func (res *Resource) SetI18nName(name string) {
 
 func (res *Resource) SetI18nModel(value interface{}) {
 	res.I18nPrefix = i18nmod.StructGroup(value)
-}
-
-func (res *Resource) BeforeSave(callbacks ...*Callback) {
-	if res.beforeSaveCallbacks == nil {
-		res.beforeSaveCallbacks = make(map[string]*Callback)
-	}
-	for _, cb := range callbacks {
-		res.beforeSaveCallbacks[cb.Name] = cb
-	}
-}
-
-func (res *Resource) GetBeforeFindCallbacks() map[string]*Callback {
-	return res.beforeFindCallbacks
-}
-
-func (res *Resource) BeforeFind(callbacks ...*Callback) {
-	if res.beforeFindCallbacks == nil {
-		res.beforeFindCallbacks = make(map[string]*Callback)
-	}
-	for _, cb := range callbacks {
-		res.beforeFindCallbacks[cb.Name] = cb
-	}
 }
 
 func (res *Resource) GetID() string {

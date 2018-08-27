@@ -22,7 +22,16 @@ type CRUD struct {
 }
 
 func NewCrud(res Resourcer, ctx *core.Context) *CRUD {
-	return &CRUD{res: res, context: ctx}
+	return &CRUD{res: res, context: ctx, dispatchers: []edis.EventDispatcherInterface{res}}
+}
+
+func (crud *CRUD) SetDB(DB *aorm.DB) *CRUD {
+	crud.context.SetDB(DB)
+	return crud
+}
+
+func (crud *CRUD) DB() *aorm.DB {
+	return crud.context.DB
 }
 
 func (crud *CRUD) Resource() Resourcer {
@@ -153,8 +162,7 @@ func (crud *CRUD) FindOneBasic(key string) (result BasicValue, err error) {
 }
 
 func (crud *CRUD) FindOne(result interface{}) (err error) {
-	originalContext := crud.context
-	context := originalContext.Clone()
+	context := crud.context.Clone()
 	var (
 		primaryQuerySQL string
 		primaryParams   []interface{}
@@ -187,7 +195,9 @@ func (crud *CRUD) FindOne(result interface{}) (err error) {
 			}
 		}
 
-		e := &DBEvent{Resource: crud.res, Action: E_DB_ACTION_FIND_ONE, Recorde: result, Context: context, OriginalContext: originalContext}
+		e := NewDBEvent(E_DB_ACTION_FIND_ONE, context)
+		e.SetResult(result)
+
 		if err = crud.triggerDBAction(e.before()); err != nil {
 			return
 		}
@@ -210,19 +220,17 @@ func (crud *CRUD) FindOne(result interface{}) (err error) {
 
 func (crud *CRUD) FindMany(result interface{}) (err error) {
 	var (
-		originalContext = crud.context
-		context         = originalContext.Clone()
-		res             = crud.res
+		context = crud.context.Clone()
+		e       *DBEvent
 	)
-
-	var e *DBEvent
 
 	if crud.layout != nil {
 		crud = crud.layout.Prepare(crud)
 	}
 
 	if _, ok := context.DB.Get("qor:getting_total_count"); ok {
-		e = &DBEvent{Resource: res, Action: E_DB_ACTION_COUNT, Recorde: result, Context: context, OriginalContext: originalContext}
+		e = NewDBEvent(E_DB_ACTION_COUNT, context)
+		e.SetResult(result)
 		if err = crud.triggerDBAction(e.before()); err != nil {
 			return err
 		}
@@ -235,7 +243,9 @@ func (crud *CRUD) FindMany(result interface{}) (err error) {
 		return err
 	}
 
-	e = &DBEvent{Resource: res, Action: E_DB_ACTION_FIND_MANY, Recorde: result, Context: context}
+	e = NewDBEvent(E_DB_ACTION_FIND_MANY, context)
+	e.SetResult(result)
+
 	if err = crud.triggerDBAction(e.before()); err != nil {
 		return err
 	}
@@ -288,17 +298,11 @@ func (crud *CRUD) SaveOrCreate(record interface{}) error {
 	return roles.ErrPermissionDenied
 }
 
-func (crud *CRUD) callSave(record interface{}, eventName DBActionEventName) (err error) {
-	var (
-		originalContext = crud.context
-		context         = originalContext.Clone()
-		res             = crud.res
-	)
+func (crud *CRUD) callSave(recorde interface{}, eventName DBActionEvent) (err error) {
+	var context = crud.context.Clone()
 
-	var insides []interface{}
-	insides = append(insides, res)
-
-	e := &DBEvent{Resource: res, Action: eventName, Recorde: record, Context: context, OriginalContext: originalContext}
+	e := NewDBEvent(eventName, context)
+	e.SetResult(recorde)
 
 	if err = crud.triggerDBAction(e.before()); err != nil {
 		return
@@ -308,7 +312,7 @@ func (crud *CRUD) callSave(record interface{}, eventName DBActionEventName) (err
 		return
 	}
 
-	if err = context.DB.Save(record).Error; err != nil {
+	if err = context.DB.Save(recorde).Error; err != nil {
 		crud.triggerDBAction(e.error(err))
 	}
 
@@ -319,7 +323,8 @@ func (crud *CRUD) callSave(record interface{}, eventName DBActionEventName) (err
 func (crud *CRUD) CallDelete(record interface{}) (err error) {
 	if primaryQuerySQL, primaryParams := ToPrimaryQueryParams(crud.res, crud.context.ResourceID); primaryQuerySQL != "" {
 		if db := crud.context.GetDB(); !db.First(record, append([]interface{}{primaryQuerySQL}, primaryParams...)...).RecordNotFound() {
-			e := &DBEvent{Resource: crud.res, Action: E_DB_ACTION_DELETE, Recorde: record, Context: crud.context, OriginalContext: crud.context}
+			e := NewDBEvent(E_DB_ACTION_DELETE, crud.context)
+			e.SetResult(record)
 
 			if err = crud.triggerDBAction(e.before()); err != nil {
 				return
@@ -348,7 +353,7 @@ func (crud *CRUD) Delete(record interface{}) (err error) {
 }
 
 func (crud *CRUD) triggerDBAction(e *DBEvent) (err error) {
-	e.EventInterface = edis.NewEvent("db:" + e.Action.String())
+	e.Crud = crud
 	if err = crud.Trigger(e); err != nil {
 		return err
 	}
