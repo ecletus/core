@@ -147,7 +147,7 @@ func setupSetter(meta *Meta, fieldName string, record interface{}) {
 		})
 	case reflect.Bool:
 		meta.Setter = commonSetter(func(field reflect.Value, metaValue *MetaValue, context *core.Context, record interface{}) {
-			if utils.ToString(metaValue.Value) == "true" {
+			if s := utils.ToString(metaValue.Value); s == "true" || s == "on" {
 				field.SetBool(true)
 			} else {
 				field.SetBool(false)

@@ -1,5 +1,15 @@
 package core
 
+type BreadcrumberFunc func(ctx *Context) []Breadcrumb
+
+func (f BreadcrumberFunc) Breadcrumbs(ctx *Context) []Breadcrumb {
+	return f(ctx)
+}
+
+type Breadcrumber interface {
+	Breadcrumbs(ctx *Context) (crumbs []Breadcrumb)
+}
+
 type Breadcrumb interface {
 	URI(context *Context) string
 	Icon() string
@@ -7,9 +17,9 @@ type Breadcrumb interface {
 }
 
 type BreadcrumbProxy struct {
-	uri string
+	uri   string
 	label string
-	icon string
+	icon  string
 }
 
 func (b BreadcrumbProxy) URI(context *Context) string {
@@ -22,12 +32,15 @@ func (b BreadcrumbProxy) Icon() string {
 	return b.icon
 }
 
-func NewBreadcrumb(uri, label, icon string) *BreadcrumbProxy {
-	return &BreadcrumbProxy{uri, label, icon}
+func NewBreadcrumb(uri, label string, icon ...string) *BreadcrumbProxy {
+	if len(icon) == 0 {
+		icon = append(icon, "")
+	}
+	return &BreadcrumbProxy{uri, label, icon[0]}
 }
 
 type Breadcrumbs struct {
-	Items []Breadcrumb
+	Items     []Breadcrumb
 	afterNext []Breadcrumb
 }
 
@@ -48,10 +61,10 @@ func (b *Breadcrumbs) ItemsWithoutLast() (items []Breadcrumb) {
 	if len(b.Items) == 0 {
 		return
 	}
-	return b.Items[0:len(b.Items)-1]
+	return b.Items[0 : len(b.Items)-1]
 }
 
-func (b *Breadcrumbs) Last() (Breadcrumb) {
+func (b *Breadcrumbs) Last() Breadcrumb {
 	if len(b.Items) == 0 {
 		return nil
 	}

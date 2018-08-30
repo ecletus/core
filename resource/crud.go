@@ -3,6 +3,7 @@ package resource
 import (
 	"errors"
 	"fmt"
+	"reflect"
 
 	"github.com/aghape/core"
 	"github.com/aghape/roles"
@@ -60,7 +61,11 @@ func (crud *CRUD) Dispatchers() []edis.EventDispatcherInterface {
 
 func (crud *CRUD) Dispatcher(dis ...edis.EventDispatcherInterface) *CRUD {
 	crud = crud.sub()
-	crud.dispatchers = append(crud.dispatchers, dis...)
+	for _, dis := range dis {
+		if dis != nil {
+			crud.dispatchers = append(crud.dispatchers, dis)
+		}
+	}
 	return crud
 }
 
@@ -116,25 +121,31 @@ func (crud *CRUD) SetMetaValues(metaValues *MetaValues) *CRUD {
 	return crud
 }
 
-func (crud *CRUD) FindOneLayout(layout ...interface{}) (interface{}, error) {
+func (crud *CRUD) FindOneLayout(key string, layout ...interface{}) (result interface{}, err error) {
 	if len(layout) > 0 {
-		crud = crud.SetLayout(layout)
+		crud = crud.SetLayout(layout[0])
 	}
-	result := crud.layout.NewStruct()
-	if err := crud.FindOne(result); err != nil {
+	crud = crud.layout.Prepare(crud)
+	slice, recorde := crud.res.NewSliceRecord()
+	crud.context.ResourceID = key
+	if err = crud.FindOne(recorde); err != nil {
 		return nil, err
 	}
-	return result, nil
+	result = crud.layout.FormatResult(crud, slice)
+	result = reflect.ValueOf(result).Index(0).Interface()
+	return
 }
 
-func (crud *CRUD) FindManyLayout(layout ...interface{}) (interface{}, error) {
+func (crud *CRUD) FindManyLayout(layout ...interface{}) (result interface{}, err error) {
 	if len(layout) > 0 {
-		crud = crud.SetLayout(layout)
+		crud = crud.SetLayout(layout[0])
 	}
-	result := crud.layout.NewSlice()
-	if err := crud.FindMany(result); err != nil {
+	crud = crud.layout.Prepare(crud)
+	slice := crud.res.NewSlice()
+	if err = crud.FindMany(slice); err != nil {
 		return nil, err
 	}
+	result = crud.layout.FormatResult(crud, slice)
 	return result, nil
 }
 
@@ -143,22 +154,19 @@ func (crud *CRUD) FindManyLayoutOrDefault(layout interface{}, defaul ...interfac
 }
 
 func (crud *CRUD) FindManyBasic() (result []BasicValue, err error) {
-	crud = crud.SetLayout(crud.res.GetLayout(BASIC_LAYOUT))
-	result = crud.layout.NewSlice().([]BasicValue)
-	if err = crud.FindMany(nil); err != nil {
+	var resultInterface interface{}
+	if resultInterface, err = crud.FindManyLayout(BASIC_LAYOUT); err != nil {
 		return nil, err
 	}
-	return
+	return resultInterface.([]BasicValue), nil
 }
 
 func (crud *CRUD) FindOneBasic(key string) (result BasicValue, err error) {
-	crud = crud.SetLayout(crud.res.GetLayout(BASIC_LAYOUT))
-	result = crud.layout.NewStruct().(BasicValue)
-	crud.context.ResourceID = key
-	if err = crud.FindOne(result); err != nil {
+	resultInterface, err := crud.FindOneLayout(key, BASIC_LAYOUT)
+	if err != nil {
 		return nil, err
 	}
-	return
+	return resultInterface.(BasicValue), nil
 }
 
 func (crud *CRUD) FindOne(result interface{}) (err error) {
@@ -207,10 +215,6 @@ func (crud *CRUD) FindOne(result interface{}) (err error) {
 			return err
 		}
 
-		if crud.layout != nil {
-			crud.layout.FormatResult(crud, []interface{}{result})
-		}
-
 		err = crud.triggerDBAction(e.after())
 		return err
 	}
@@ -224,17 +228,13 @@ func (crud *CRUD) FindMany(result interface{}) (err error) {
 		e       *DBEvent
 	)
 
-	if crud.layout != nil {
-		crud = crud.layout.Prepare(crud)
-	}
-
 	if _, ok := context.DB.Get("qor:getting_total_count"); ok {
-		e = NewDBEvent(E_DB_ACTION_COUNT, context)
+		e = NewDBEvent(E_DB_ACTION_COUNT, context.Clone())
 		e.SetResult(result)
 		if err = crud.triggerDBAction(e.before()); err != nil {
 			return err
 		}
-		if err = context.DB.Count(result).Error; err != nil {
+		if err = e.Context.DB.Count(result).Error; err != nil {
 			crud.triggerDBAction(e.error(err))
 			return err
 		}
@@ -253,10 +253,6 @@ func (crud *CRUD) FindMany(result interface{}) (err error) {
 	if err = context.DB.Set("gorm:order_by_primary_key", "DESC").Find(result).Error; err != nil {
 		crud.triggerDBAction(e.error(err))
 		return err
-	}
-
-	if crud.layout != nil {
-		crud.layout.FormatResult(crud, result)
 	}
 
 	err = crud.triggerDBAction(e.after())

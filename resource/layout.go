@@ -7,24 +7,32 @@ import (
 // context.Data().Set("skip.fragments", true)
 
 type LayoutInterface interface {
+	Struct
 	GetType() interface{}
 	Prepare(crud *CRUD) *CRUD
-	NewStruct() interface{}
-	NewSlice() interface{}
-	FormatResult(crud *CRUD, result interface{})
+	FormatResult(crud *CRUD, result interface{}) interface{}
 }
 
 type Layout struct {
-	Type             interface{}
+	StructValue
 	PrepareFunc      func(crud *CRUD) *CRUD
-	FormatResultFunc func(crud *CRUD, result interface{})
+	FormatResultFunc func(crud *CRUD, result interface{}) interface{}
+	SelectColumns    []interface{}
 }
 
 func (l *Layout) GetType() interface{} {
-	return l.Type
+	return l.Value
+}
+
+func (l *Layout) Select(columns ...interface{}) *Layout {
+	l.SelectColumns = columns
+	return l
 }
 
 func (l *Layout) Prepare(crud *CRUD) *CRUD {
+	if l.SelectColumns != nil {
+		crud.SetDB(crud.DB().Select(l.SelectColumns))
+	}
 	if l.PrepareFunc != nil {
 		return l.PrepareFunc(crud)
 	}
@@ -32,34 +40,43 @@ func (l *Layout) Prepare(crud *CRUD) *CRUD {
 }
 
 func (l *Layout) NewStruct() interface{} {
-	return reflect.New(reflect.Indirect(reflect.ValueOf(l.Type)).Type()).Interface()
+	return l.New()
 }
 
-func (l *Layout) NewSlice() interface{} {
-	sliceType := reflect.SliceOf(reflect.TypeOf(l.Type))
-	slice := reflect.MakeSlice(sliceType, 0, 0)
-	slicePtr := reflect.New(sliceType)
-	slicePtr.Elem().Set(slice)
-	return slicePtr.Interface()
-}
-
-func (l *Layout) FormatResult(crud *CRUD, recorde interface{}) {
+func (l *Layout) FormatResult(crud *CRUD, recorde interface{}) interface{} {
 	if l.FormatResultFunc != nil {
-		l.FormatResultFunc(crud, recorde)
+		return l.FormatResultFunc(crud, recorde)
+	}
+	return recorde
+}
+
+func ResultFormatter(slice interface{}, formatter func(i int, record interface{}), makeSlice ...func(len int)) {
+	sliceValue := reflect.Indirect(reflect.ValueOf(slice))
+	l := sliceValue.Len()
+	if makeSlice != nil {
+		makeSlice[0](l)
+	}
+	for i := 0; i < l; i++ {
+		r := sliceValue.Index(i).Addr().Interface()
+		formatter(i, r)
 	}
 }
 
-func NewBasicLayout(res Resourcer) LayoutInterface {
+func NewBasicLayout() *Layout {
 	return &Layout{
-		Type: res.GetResource().Value,
-		FormatResultFunc: func(crud *CRUD, result interface{}) {
-			if items, ok := result.([]interface{}); ok {
-				for i, r := range items {
-					if _, ok := r.(BasicValue); !ok {
-						items[i] = crud.res.BasicValue(r)
-					}
+		StructValue: StructValue{&Basic{}},
+		FormatResultFunc: func(crud *CRUD, result interface{}) interface{} {
+			var out []BasicValue
+			ResultFormatter(result, func(i int, r interface{}) {
+				if bv, ok := r.(BasicValue); ok {
+					out[i] = bv
+				} else {
+					out[i] = crud.res.BasicValue(r)
 				}
-			}
+			}, func(len int) {
+				out = make([]BasicValue, len, len)
+			})
+			return out
 		},
 	}
 }

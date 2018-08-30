@@ -2,6 +2,7 @@ package resource
 
 import (
 	"github.com/aghape/core"
+	"github.com/moisespsena-go/aorm"
 	"github.com/moisespsena/go-edis"
 	"github.com/moisespsena/go-path-helpers"
 )
@@ -98,6 +99,15 @@ type DBEvent struct {
 
 func NewDBEvent(action DBActionEvent, ctx *core.Context) *DBEvent {
 	return &DBEvent{EventInterface: edis.NewEvent(action.FullName()), Action: action, Context: ctx}
+}
+
+func (e *DBEvent) DB() *aorm.DB {
+	return e.Context.GetDB()
+}
+
+func (e *DBEvent) SetDB(DB *aorm.DB) *DBEvent {
+	e.Context.SetDB(DB)
+	return e
 }
 
 func (e *DBEvent) Resource() Resourcer {

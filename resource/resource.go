@@ -23,11 +23,11 @@ const BASIC_LAYOUT = "basic"
 // Resourcer interface
 type Resourcer interface {
 	edis.EventDispatcherInterface
+	Struct
 	GetID() string
 	GetResource() *Resource
 	GetPrimaryFields() []*aorm.StructField
 	GetMetas([]string) []Metaor
-	NewSlice() interface{}
 	NewStruct(site ...core.SiteInterface) interface{}
 	GetPathLevel() int
 	SetParent(parent Resourcer, fieldName string)
@@ -58,34 +58,6 @@ type ConfigureResourceInterface interface {
 	ConfigureQorResource(Resourcer)
 }
 
-type BasicValue interface {
-	BasicID() string
-	BasicLabel() string
-	BasicIcon() string
-}
-
-type Basic struct {
-	ID    string
-	Label string
-	Icon  string
-}
-
-func (b *Basic) BasicID() string {
-	return b.ID
-}
-
-func (b *Basic) BasicLabel() string {
-	return b.Label
-}
-
-func (b *Basic) BasicIcon() string {
-	return b.Icon
-}
-
-type ToBasicInterface interface {
-	GetBasicValue() *BasicValue
-}
-
 type CalbackFunc func(resourcer Resourcer, value interface{}, context *core.Context) error
 
 type Callback struct {
@@ -96,6 +68,7 @@ type Callback struct {
 // Resource is a struct that including basic definition of qor resource
 type Resource struct {
 	edis.EventDispatcher
+	StructValue
 	UID                string
 	ID                 string
 	Name               string
@@ -103,7 +76,6 @@ type Resource struct {
 	PKG                string
 	PkgPath            string
 	I18nPrefix         string
-	Value              interface{}
 	PrimaryFields      []*aorm.StructField
 	Permission         *roles.Permission
 	Validators         []func(interface{}, *MetaValues, *core.Context) error
@@ -111,7 +83,6 @@ type Resource struct {
 	primaryField       *aorm.Field
 	newStructCallbacks []func(obj interface{}, site core.SiteInterface)
 	FakeScope          *aorm.Scope
-	DefaultFilters     []func(context *core.Context, db *aorm.DB) *aorm.DB
 	PathLevel          int
 	ParentFieldName    string
 	ParentFieldDBName  string
@@ -153,7 +124,6 @@ func New(value interface{}, id, uid string) *Resource {
 			UID:                uid,
 			PKG:                pkg,
 			ID:                 id,
-			Value:              value,
 			Name:               name,
 			PluralName:         inflection.Plural(name),
 			PkgPath:            pkgPath,
@@ -165,9 +135,28 @@ func New(value interface{}, id, uid string) *Resource {
 		}
 	)
 
+	res.Value = value
 	res.SetDispatcher(res)
 	res.SetPrimaryFields()
 	return res
+}
+
+// NewStruct initialize a struct for the Resource
+func (res *Resource) NewStruct(site ...core.SiteInterface) interface{} {
+	obj := res.New()
+	if len(site) != 0 && site[0] != nil {
+		if init, ok := obj.(interface {
+			Init(siteInterface core.SiteInterface)
+		}); ok {
+			init.Init(site[0])
+		}
+
+		for _, cb := range res.newStructCallbacks {
+			cb(obj, site[0])
+		}
+	}
+
+	return obj
 }
 
 func (res *Resource) BasicValue(record interface{}) BasicValue {
@@ -264,10 +253,6 @@ func (res *Resource) NewStructCallback(callbacks ...func(obj interface{}, site c
 	return res
 }
 
-func (res *Resource) DefaultFilter(fns ...func(context *core.Context, db *aorm.DB) *aorm.DB) {
-	res.DefaultFilters = append(res.DefaultFilters, fns...)
-}
-
 // SetPrimaryFields set primary fields
 func (res *Resource) SetPrimaryFields(fields ...string) error {
 	scope := res.FakeScope
@@ -305,46 +290,6 @@ func (res *Resource) AddValidator(fc func(interface{}, *MetaValues, *core.Contex
 // AddProcessor add processor to resource, it is used to process data before creating, updating, will rollback the change if it return any error
 func (res *Resource) AddProcessor(fc func(interface{}, *MetaValues, *core.Context) error) {
 	res.Processors = append(res.Processors, fc)
-}
-
-// NewStruct initialize a struct for the Resource
-func (res *Resource) NewStruct(site ...core.SiteInterface) interface{} {
-	if res.Value == nil {
-		return nil
-	}
-	obj := reflect.New(reflect.Indirect(reflect.ValueOf(res.Value)).Type()).Interface()
-
-	if init, ok := obj.(interface {
-		Init()
-	}); ok {
-		init.Init()
-	}
-
-	if len(site) != 0 && site[0] != nil {
-		if init, ok := obj.(interface {
-			Init(siteInterface core.SiteInterface)
-		}); ok {
-			init.Init(site[0])
-		}
-
-		for _, cb := range res.newStructCallbacks {
-			cb(obj, site[0])
-		}
-	}
-
-	return obj
-}
-
-// NewSlice initialize a slice of struct for the Resource
-func (res *Resource) NewSlice() interface{} {
-	if res.Value == nil {
-		return nil
-	}
-	sliceType := reflect.SliceOf(reflect.TypeOf(res.Value))
-	slice := reflect.MakeSlice(sliceType, 0, 0)
-	slicePtr := reflect.New(sliceType)
-	slicePtr.Elem().Set(slice)
-	return slicePtr.Interface()
 }
 
 // GetMetas get defined metas, to match interface `Resourcer`
