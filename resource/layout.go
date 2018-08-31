@@ -71,7 +71,7 @@ func NewBasicLayout() *Layout {
 				if bv, ok := r.(BasicValue); ok {
 					out[i] = bv
 				} else {
-					out[i] = crud.res.BasicValue(r)
+					out[i] = crud.res.BasicValue(crud.context, r)
 				}
 			}, func(len int) {
 				out = make([]BasicValue, len, len)

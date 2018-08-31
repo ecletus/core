@@ -40,7 +40,7 @@ type Resourcer interface {
 	ParamIDName() string
 	GetFakeScope() *aorm.Scope
 	HasPermission(mode roles.PermissionMode, context *core.Context) bool
-	BasicValue(recorde interface{}) BasicValue
+	BasicValue(ctx *core.Context, recorde interface{}) BasicValue
 	Crud(ctx *core.Context) *CRUD
 	CrudDB(db *aorm.DB) *CRUD
 	Layout(name string, layout LayoutInterface)
@@ -159,7 +159,7 @@ func (res *Resource) NewStruct(site ...core.SiteInterface) interface{} {
 	return obj
 }
 
-func (res *Resource) BasicValue(record interface{}) BasicValue {
+func (res *Resource) BasicValue(ctx *core.Context, record interface{}) BasicValue {
 	return record.(BasicValue)
 }
 

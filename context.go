@@ -9,11 +9,11 @@ import (
 	"strings"
 	"time"
 
+	"github.com/aghape/common"
 	"github.com/aghape/core/config"
 	"github.com/aghape/core/contextdata"
 	"github.com/aghape/core/utils/uri"
 	uurl "github.com/aghape/core/utils/url"
-	"github.com/aghape/common"
 	"github.com/moisespsena-go/aorm"
 	"github.com/moisespsena/go-i18n-modular/i18nmod"
 	"github.com/moisespsena/go-route"
@@ -89,7 +89,10 @@ func (context *Context) URLParams() *route.OrderedMap {
 }
 
 func (context *Context) URLParam(key string) string {
-	return context.RouteContext.URLParam(key)
+	if context.RouteContext != nil {
+		return context.RouteContext.URLParam(key)
+	}
+	return ""
 }
 
 func (context *Context) SetRequest(r *http.Request) {
