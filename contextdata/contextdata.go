@@ -1,8 +1,8 @@
 package contextdata
 
 import (
-	"fmt"
 	"context"
+	"fmt"
 	"net/http"
 
 	"github.com/moisespsena-go/aorm"
@@ -21,7 +21,7 @@ func NewRequestContextData() *ContextData {
 	return (&ContextData{}).Inside()
 }
 
-func (d *ContextData) Set(key, value interface{}, pairs ... interface{}) *ContextData {
+func (d *ContextData) Set(key, value interface{}, pairs ...interface{}) *ContextData {
 	d.Current.Data[key] = value
 	l := len(pairs)
 	for i := 0; i < l; i = i + 2 {
@@ -86,6 +86,13 @@ func (d *ContextData) GetLocal(key interface{}) interface{} {
 func (d *ContextData) Inside() *ContextData {
 	d.Current = &ContextDataNode{d.Current, map[interface{}]interface{}{}}
 	return d
+}
+
+func (d *ContextData) With() func() {
+	d.Inside()
+	return func() {
+		d.Outside()
+	}
 }
 
 func (d *ContextData) Outside() *ContextData {

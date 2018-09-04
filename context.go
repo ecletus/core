@@ -66,6 +66,7 @@ type Context struct {
 	Translator     *i18nmod.Translator
 	ContextFactory *ContextFactory
 	I18nGroupStack *i18nGroup
+	NotFound       bool
 }
 
 func (context *Context) Breadcrumbs() *Breadcrumbs {
@@ -239,6 +240,7 @@ func (context *Context) CloneBasic() *Context {
 		Locale:      context.Locale,
 		I18nContext: context.I18nContext,
 		Translator:  context.Translator,
+		NotFound:    context.NotFound,
 	}
 }
 

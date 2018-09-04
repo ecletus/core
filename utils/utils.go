@@ -1,6 +1,7 @@
 package utils
 
 import (
+	"bytes"
 	"database/sql/driver"
 	"fmt"
 	"net/http"
@@ -12,18 +13,18 @@ import (
 	"runtime"
 	"runtime/debug"
 	"time"
-	"bytes"
 
 	"go4.org/sort"
 
-	"github.com/gosimple/slug"
-	"github.com/moisespsena-go/aorm"
-	"github.com/jinzhu/now"
-	"github.com/microcosm-cc/bluemonday"
 	"github.com/aghape/core"
 	"github.com/aghape/helpers"
+	"github.com/gosimple/slug"
+	"github.com/jinzhu/now"
+	"github.com/microcosm-cc/bluemonday"
+	"github.com/moisespsena-go/aorm"
 
 	"strings"
+
 	"github.com/moisespsena/template/html/template"
 )
 
@@ -51,6 +52,7 @@ func init() {
 		DefaultLocale = strings.Replace(strings.Split(lang, ".")[0], "_", "-", 1)
 	}
 }
+
 // HumanizeString Humanize separates string based on capitalizd letters
 // e.g. "order_item-data" -> "OrderItemData"
 func NamifyString(s string) string {
@@ -73,6 +75,7 @@ func NamifyString(s string) string {
 	}
 	return string(human)
 }
+
 // HumanizeString Humanize separates string based on capitalizd letters
 // e.g. "OrderItem" -> "Order Item"
 func HumanizeString(str string) string {
@@ -159,6 +162,19 @@ func Stringify(object interface{}) string {
 	}
 
 	return fmt.Sprint(reflect.Indirect(reflect.ValueOf(object)).Interface())
+}
+
+// StringifyContext stringify any data, if it is a struct, will try to use its Name, Title, Code field, else will use its primary key
+func StringifyContext(object interface{}, ctx *core.Context) string {
+	if helpers.IsNilInterface(object) {
+		return ""
+	}
+	if obj, ok := object.(interface {
+		ContextString(ctx *core.Context) string
+	}); ok {
+		return obj.ContextString(ctx)
+	}
+	return Stringify(object)
 }
 
 // ModelType get value's model type
@@ -340,7 +356,7 @@ func RenderHtmlTemplate(tpl string, data interface{}) template.HTML {
 	return template.HTML(buf.String())
 }
 
-func TypeId(tp interface{}) string  {
+func TypeId(tp interface{}) string {
 	p := reflect.ValueOf(tp)
 
 	for p.Kind() == reflect.Ptr {
