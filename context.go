@@ -67,6 +67,7 @@ type Context struct {
 	ContextFactory *ContextFactory
 	I18nGroupStack *i18nGroup
 	NotFound       bool
+	Api            bool
 }
 
 func (context *Context) Breadcrumbs() *Breadcrumbs {
@@ -241,6 +242,7 @@ func (context *Context) CloneBasic() *Context {
 		I18nContext: context.I18nContext,
 		Translator:  context.Translator,
 		NotFound:    context.NotFound,
+		Api:         context.Api,
 	}
 }
 

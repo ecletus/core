@@ -177,6 +177,19 @@ func StringifyContext(object interface{}, ctx *core.Context) string {
 	return Stringify(object)
 }
 
+func HtmlifyContext(value interface{}, ctx *core.Context) template.HTML {
+	switch vt := value.(type) {
+	case interface{ Htmlify() template.HTML }:
+		return vt.Htmlify()
+	case interface {
+		Htmlify(*core.Context) template.HTML
+	}:
+		return vt.Htmlify(ctx)
+	default:
+		return template.HTML(StringifyContext(value, ctx))
+	}
+}
+
 // ModelType get value's model type
 func ModelType(value interface{}) reflect.Type {
 	reflectType := reflect.Indirect(reflect.ValueOf(value)).Type()
