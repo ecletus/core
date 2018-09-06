@@ -1,5 +1,6 @@
 'use strict';
 
+
 var gulp = require('gulp'),
   babel = require('gulp-babel'),
   eslint = require('gulp-eslint'),
@@ -8,9 +9,11 @@ var gulp = require('gulp'),
   fs = require('fs'),
   path = require('path'),
   es = require('event-stream'),
-  rename = require('gulp-rename');
+  rename = require('gulp-rename'),
+  walk = require('fs-walk');
 
 const prefix = '/assets/static/admin/';
+
 
 function pj() {
   let args = Array.prototype.slice.call(arguments);
@@ -26,10 +29,10 @@ var moduleName = (function () {
     useSubName;
 
   while (i++ < length) {
-    if (/^--+(\w+)/i.test(args[i])) {
-      name = args[i].split('--')[1];
-      subName = args[i].split('--')[2];
-      useSubName = args[i].split('--')[3];
+    if (/^:+(\w+)/i.test(args[i])) {
+      name = args[i].split(':')[1];
+      subName = args[i].split(':')[2];
+      useSubName = args[i].split(':')[3];
       break;
     }
   }
@@ -40,6 +43,15 @@ var moduleName = (function () {
   };
 })();
 
+function loadTasks(lib, prefix) {
+  prefix = prefix || "";
+  walk.walkSync('./gulp_tasks/' + prefix, function(basedir, filename, stat) {
+    if (!stat.isDirectory() && /\.js$/.test(filename)) {
+      require("./" + basedir + "/" + filename).Task(lib, gulp);
+    }
+  });
+}
+
 // Admin Module
 // Command: gulp [task]
 // Admin is default task
@@ -47,133 +59,35 @@ var moduleName = (function () {
 // -----------------------------------------------------------------------------
 
 function adminTasks() {
-  var pathto = function (file) {
-    return pj('..', 'admin', prefix, file);
-  };
-  var scripts = {
-    src: pathto('javascripts/app/*.js'),
-    dest: pathto('javascripts'),
-    qor: pathto('javascripts/qor/*.js'),
-    qorInit: pathto('javascripts/qor/qor-config.js'),
-    qorCommon: pathto('javascripts/qor/qor-common.js'),
-    qorAdmin: [pathto('javascripts/qor.js'), pathto('javascripts/app.js')],
-    all: ['gulpfile.js', pathto('javascripts/qor/*.js')]
-  };
-  var styles = {
-    src: pathto('stylesheets/scss/{app,qor}.scss'),
-    dest: pathto('stylesheets'),
-    vendors: pathto('stylesheets/vendors'),
-    main: pathto('stylesheets/{qor,app}.css'),
-    qorAdmin: [pathto('stylesheets/vendors.css'), pathto('stylesheets/qor.css'), pathto('stylesheets/app.css')],
-    scss: pathto('stylesheets/scss/**/*.scss')
-  };
+  let pathto = function (file) {
+      return pj('..', 'admin', prefix, file);
+    },
+    scripts = {
+      src: pathto('javascripts/app/*.js'),
+      dest: pathto('javascripts'),
+      qor: pathto('javascripts/qor/*.js'),
+      qorInit: pathto('javascripts/qor/qor-config.js'),
+      qorCommon: pathto('javascripts/qor/qor-common.js'),
+      qorAdmin: [pathto('javascripts/qor.js'), pathto('javascripts/app.js')],
+      all: ['gulpfile.js', pathto('javascripts/qor/*.js')]
+    },
+    styles = {
+      src: pathto('stylesheets/scss/{app,qor}.scss'),
+      dest: pathto('stylesheets'),
+      vendors: pathto('stylesheets/vendors'),
+      main: pathto('stylesheets/{qor,app}.css'),
+      qorAdmin: [pathto('stylesheets/vendors.css'), pathto('stylesheets/qor.css'), pathto('stylesheets/app.css')],
+      scss: pathto('stylesheets/scss/**/*.scss')
+    };
 
-  gulp.task('qor', function () {
-    return gulp
-      .src([scripts.qorInit, scripts.qorCommon, scripts.qor])
-      .pipe(plumber())
-      .pipe(plugins.concat('qor.js'))
-      //.pipe(plugins.uglify())
-      .pipe(gulp.dest(scripts.dest));
-  });
-
-  gulp.task('js', ['qor'], function () {
-    return gulp
-      .src(scripts.src)
-      .pipe(plumber())
-      .pipe(
-        eslint({
-          configFile: '.eslintrc'
-        })
-      )
-      .pipe(plugins.concat('app.js'))
-      .pipe(plugins.uglify())
-      .pipe(gulp.dest(scripts.dest));
-  });
-
-  gulp.task('qor+', function () {
-    return gulp
-      .src([scripts.qorInit, scripts.qorCommon, scripts.qor])
-      .pipe(plumber())
-      .pipe(
-        eslint({
-          configFile: '.eslintrc'
-        })
-      )
-      .pipe(
-        babel({
-          presets: ['es2015']
-        })
-      )
-      .pipe(eslint.format())
-      .pipe(plugins.concat('qor.js'))
-      .pipe(plugins.uglify())
-      .pipe(gulp.dest(scripts.dest));
-  });
-
-  gulp.task('js+', function () {
-    return gulp
-      .src(scripts.src)
-      .pipe(plumber())
-      .pipe(
-        babel({
-          presets: ['es2015']
-        })
-      )
-      .pipe(eslint.format())
-      .pipe(plugins.concat('app.js'))
-      .pipe(plugins.uglify())
-      .pipe(gulp.dest(scripts.dest));
-  });
-
-  gulp.task('sass', function () {
-    return gulp.src(styles.src).pipe(plumber()).pipe(plugins.sass()).pipe(gulp.dest(styles.dest));
-  });
-
-  gulp.task('css', ['sass'], function () {
-    return gulp
-      .src(styles.main)
-      .pipe(plumber())
-      .pipe(plugins.autoprefixer())
-      .pipe(plugins.csscomb())
-      .pipe(plugins.minifyCss())
-      .pipe(gulp.dest(styles.dest));
-  });
-
-  gulp.task('release_js', ['qor+'], function () {
-    return gulp.src(scripts.qorAdmin).pipe(plugins.concat('qor_admin_default.js')).pipe(gulp.dest(scripts.dest));
-  });
-
-  gulp.task('release_js+', ['js', 'js+', 'release_js']);
-
-  gulp.task('release_css', function () {
-    return gulp.src(styles.qorAdmin).pipe(plugins.concat('qor_admin_default.css')).pipe(gulp.dest(styles.dest));
-  });
-
-  gulp.task('release_css+', ['css', 'release_css']);
-
-  gulp.task('release', ['qor+', 'js+', 'css', 'release_js', 'release_css']);
-
-  gulp.task('watch', function () {
-    var watch_qor = gulp.watch(scripts.qor, ['qor+']);
-    var watch_js = gulp.watch(scripts.src, ['js+']);
-    var watch_css = gulp.watch(styles.scss, ['css']);
-
-    gulp.watch(styles.qorAdmin, ['release_css']);
-    gulp.watch(scripts.qorAdmin, ['release_js']);
-
-    watch_qor.on('change', function (event) {
-      console.log(':==> File ' + event.path + ' was ' + event.type + ', running tasks...');
-    });
-    watch_js.on('change', function (event) {
-      console.log(':==> File ' + event.path + ' was ' + event.type + ', running tasks...');
-    });
-    watch_css.on('change', function (event) {
-      console.log(':==> File ' + event.path + ' was ' + event.type + ', running tasks...');
-    });
-  });
-
-  gulp.task('default', ['watch']);
+  loadTasks({
+    scripts: scripts,
+    styles: styles,
+    prefix: prefix,
+    pj: pj,
+    pathto: pathto,
+    plugins: plugins
+  }, "admin");
 }
 
 // -----------------------------------------------------------------------------
@@ -326,18 +240,3 @@ if (moduleName.name) {
   console.log('Running "admin" module task in "' + pj('..', 'admin', prefix) + '...');
   adminTasks();
 }
-
-// Task for compress js and css vendor assets
-gulp.task('combineJavaScriptVendor', function () {
-  return gulp
-    .src(['!../admin/assets/static/javascripts/vendors/jquery.min.js', '../admin/assets/static/javascripts/vendors/*.js'])
-    .pipe(plugins.concat('vendors.js'))
-    .pipe(gulp.dest('../admin/assets/static/javascripts'));
-});
-
-gulp.task('compressCSSVendor', function () {
-  return gulp
-    .src('../admin/assets/static/stylesheets/vendors/*.css')
-    .pipe(plugins.concat('vendors.css'))
-    .pipe(gulp.dest('../admin/assets/static/stylesheets'));
-});

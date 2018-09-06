@@ -1,0 +1,13 @@
+'use strict';
+
+var babel = require('gulp-babel'),
+  eslint = require('gulp-eslint'),
+  plumber = require('gulp-plumber');
+
+function Task(lib, gulp) {
+  var scripts = lib.scripts,
+    styles = lib.styles,
+    plugins = lib.plugins;
+}
+
+exports.Task = Task;
