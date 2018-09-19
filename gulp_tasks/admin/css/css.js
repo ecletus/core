@@ -12,7 +12,6 @@ function Task(lib, gulp) {
       .pipe(plumber())
       .pipe(plugins.autoprefixer())
       .pipe(plugins.csscomb())
-      .pipe(plugins.minifyCss())
       .pipe(gulp.dest(styles.dest));
   });
 }
