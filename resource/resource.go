@@ -318,24 +318,19 @@ func (res *Resource) HasPermission(mode roles.PermissionMode, context *core.Cont
 	return res.Permission.HasPermission(mode, roles...)
 }
 
-// ToPrimaryQueryParams to primary query params
-func (res *Resource) ToPrimaryQueryParams(primaryValue string) (string, []interface{}) {
-	return ToPrimaryQueryParams(res, primaryValue)
+// StringToPrimaryQuery to primary query params
+func (res *Resource) PrimaryQuery(primaryValue string, exclude ...bool) (string, []interface{}) {
+	return StringToPrimaryQuery(res, primaryValue, exclude...)
 }
 
-// ToPrimaryQueryParamsFromMetaValue to primary query params from meta values
-func (res *Resource) ToPrimaryQueryParamsFromMetaValue(metaValues *MetaValues) (string, []interface{}) {
-	return ToPrimaryQueryParamsFromMetaValue(res, metaValues)
+// MetaValuesToPrimaryQuery to primary query params from meta values
+func (res *Resource) MetaValuesToPrimaryQuery(metaValues *MetaValues) (string, []interface{}) {
+	return MetaValuesToPrimaryQuery(res, metaValues)
 }
 
-// ToPrimaryQueryParamsFromString to primary query params from string value
-func (res *Resource) ToPrimaryQueryParamsFromString(value string, exclude ...bool) (string, []interface{}) {
-	return ToPrimaryQueryParamsFromString(res, value, exclude...)
-}
-
-// ToPrimaryQueryParamsFromValues to primary query params from slice values
-func (res *Resource) ToPrimaryQueryParamsFromValues(exclude bool, values ...interface{}) (string, []interface{}) {
-	return ToPrimaryQueryParamsFromValues(res, exclude, values...)
+// ValuesToPrimaryQuery to primary query params from slice values
+func (res *Resource) ValuesToPrimaryQuery(exclude bool, values ...interface{}) (string, []interface{}) {
+	return ValuesToPrimaryQuery(res, exclude, values...)
 }
 
 func (res *Resource) Crud(ctx *core.Context) *CRUD {

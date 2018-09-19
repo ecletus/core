@@ -5,62 +5,74 @@ import (
 	"strings"
 
 	"github.com/aghape/core/utils"
+	"github.com/moisespsena-go/aorm"
 )
 
-// ToPrimaryQueryParams to primary query params
-func ToPrimaryQueryParams(res Resourcer, primaryValue string) (string, []interface{}) {
-	var (
-		primaryFields = res.GetPrimaryFields()
-		scope         = res.GetFakeScope()
-	)
-	if primaryValue != "" {
-		// multiple primary fields
-		if len(primaryFields) > 1 {
-			if primaryValueStrs := strings.Split(primaryValue, ","); len(primaryValueStrs) == len(primaryFields) {
-				sqls := []string{}
-				primaryValues := []interface{}{}
-				for idx, field := range primaryFields {
-					sqls = append(sqls, fmt.Sprintf("%v.%v = ?", scope.QuotedTableName(),
-						scope.Quote(field.DBName)))
-					primaryValues = append(primaryValues, primaryValueStrs[idx])
-				}
-
-				return strings.Join(sqls, " AND "), primaryValues
-			}
-		}
-
-		// fallback to first configured primary field
-		if len(primaryFields) > 0 {
-			return fmt.Sprintf("%v.%v = ?", scope.QuotedTableName(),
-				scope.Quote(primaryFields[0].DBName)), []interface{}{primaryValue}
-		}
-
-		// if no configured primary fields found
-		if primaryField := scope.PrimaryField(); primaryField != nil {
-			return fmt.Sprintf("%v.%v = ?", scope.QuotedTableName(),
-				scope.Quote(primaryField.DBName)), []interface{}{primaryValue}
-		}
-	}
-
-	return "", []interface{}{}
+// StringToPrimaryQuery to primary query params
+func StringToPrimaryQuery(res Resourcer, value string, exclude ...bool) (string, []interface{}) {
+	return StringsToPrimaryQuery(res, strings.Split(strings.Trim(value, ","), ","), exclude...)
 }
 
-// ToPrimaryQueryParamsFromMetaValue to primary query params from meta values
-func ToPrimaryQueryParamsFromMetaValue(res Resourcer, metaValues *MetaValues) (string, []interface{}) {
+// StringsToPrimaryQuery to primary query params
+func StringsToPrimaryQuery(res Resourcer, values []string, exclude ...bool) (string, []interface{}) {
+	if len(values) == 0 {
+		return "", nil
+	}
+
 	var (
 		sqls          []string
 		primaryValues []interface{}
 		scope         = res.GetFakeScope()
 	)
 
+	fields := res.GetPrimaryFields()
+	if len(values) > len(fields) {
+		return "", nil
+	}
+	op := "="
+	if exclude != nil && exclude[0] {
+		op = "<>"
+	}
+	for i, field := range fields {
+		sqls = append(sqls, fmt.Sprintf("%v.%v "+op+" ?", scope.QuotedTableName(), scope.Quote(field.DBName)))
+		primaryValues = append(primaryValues, values[i])
+	}
+
+	return strings.Join(sqls, " AND "), primaryValues
+}
+
+// MetaValuesToPrimaryQuery to primary query params from meta values
+func MetaValuesToPrimaryQuery(res Resourcer, metaValues *MetaValues, exclude ...bool) (string, []interface{}) {
+	var (
+		values []string
+	)
+
 	if metaValues != nil {
 		for _, field := range res.GetPrimaryFields() {
 			if metaField := metaValues.Get(field.Name); metaField != nil {
-				sqls = append(sqls, fmt.Sprintf("%v.%v = ?", scope.QuotedTableName(), scope.Quote(field.DBName)))
-				primaryValues = append(primaryValues, utils.ToString(metaField.Value))
+				values = append(values, utils.ToString(metaField.Value))
 			}
 		}
 	}
 
-	return strings.Join(sqls, " AND "), primaryValues
+	return StringsToPrimaryQuery(res, values, exclude...)
+}
+
+// ValuesToPrimaryQuery to primary query params from values
+func ValuesToPrimaryQuery(res Resourcer, exclude bool, values ...interface{}) (string, []interface{}) {
+	var (
+		sql, op string
+		scope   = res.GetFakeScope()
+	)
+
+	if values != nil {
+		field := res.GetPrimaryFields()[0]
+		if exclude {
+			op = " NOT"
+		}
+		sql = fmt.Sprintf("%v.%v"+op+" IN %v", scope.QuotedTableName(), scope.Quote(field.DBName),
+			aorm.TupleQueryArgs(len(values)))
+	}
+
+	return sql, values
 }

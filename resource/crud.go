@@ -176,10 +176,12 @@ func (crud *CRUD) FindOne(result interface{}) (err error) {
 		primaryParams   []interface{}
 	)
 
-	if crud.metaValues == nil {
-		primaryQuerySQL, primaryParams = ToPrimaryQueryParams(crud.res, context.ResourceID)
+	if len(key) > 0 && key[0] != "" {
+		primaryQuerySQL, primaryParams = StringToPrimaryQuery(crud.res, key[0])
+	} else if crud.metaValues == nil {
+		primaryQuerySQL, primaryParams = StringToPrimaryQuery(crud.res, context.ResourceID)
 	} else {
-		primaryQuerySQL, primaryParams = ToPrimaryQueryParamsFromMetaValue(crud.res, crud.metaValues)
+		primaryQuerySQL, primaryParams = MetaValuesToPrimaryQuery(crud.res, crud.metaValues)
 
 		if len(primaryParams) == 1 {
 			if s, ok := primaryParams[0].(string); ok {
@@ -317,7 +319,7 @@ func (crud *CRUD) callSave(recorde interface{}, eventName DBActionEvent) (err er
 }
 
 func (crud *CRUD) CallDelete(record interface{}) (err error) {
-	if primaryQuerySQL, primaryParams := ToPrimaryQueryParams(crud.res, crud.context.ResourceID); primaryQuerySQL != "" {
+	if primaryQuerySQL, primaryParams := StringToPrimaryQuery(crud.res, crud.context.ResourceID); primaryQuerySQL != "" {
 		if db := crud.context.GetDB(); !db.First(record, append([]interface{}{primaryQuerySQL}, primaryParams...)...).RecordNotFound() {
 			e := NewDBEvent(E_DB_ACTION_DELETE, crud.context)
 			e.SetResult(record)
