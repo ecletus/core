@@ -9,6 +9,9 @@ import (
 	"strings"
 	"time"
 
+	"github.com/moisespsena/go-default-logger"
+	"github.com/op/go-logging"
+
 	"github.com/aghape/common"
 	"github.com/aghape/core/config"
 	"github.com/aghape/core/contextdata"
@@ -68,6 +71,8 @@ type Context struct {
 	I18nGroupStack *i18nGroup
 	NotFound       bool
 	Api            bool
+
+	logger *logging.Logger
 }
 
 func (context *Context) Breadcrumbs() *Breadcrumbs {
@@ -243,6 +248,7 @@ func (context *Context) CloneBasic() *Context {
 		Translator:  context.Translator,
 		NotFound:    context.NotFound,
 		Api:         context.Api,
+		logger:      context.logger,
 	}
 }
 
@@ -387,6 +393,13 @@ func (context *Context) SetDB(db *aorm.DB) {
 		db = db.Set(CONTEXT_KEY, context)
 	}
 	context.DB = db
+}
+
+func (context *Context) Logger() *logging.Logger {
+	if context.logger == nil {
+		context.logger = defaultlogger.NewLogger(context.OriginalURL.String())
+	}
+	return context.logger
 }
 
 func (context *Context) Htmlify(value interface{}) template.HTML {
