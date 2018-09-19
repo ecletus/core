@@ -44,6 +44,15 @@ func setupSetter(meta *Meta, fieldName string, record interface{}) {
 			field := reflect.Indirect(reflect.ValueOf(record)).FieldByName(fieldName)
 			if field.Kind() == reflect.Ptr {
 				if field.IsNil() && utils.ToString(metaValue.Value) != "" {
+					if metaValue.MetaValues == nil {
+						if fieldStruct := metaValue.Meta.GetFieldStruct(); fieldStruct != nil &&
+							fieldStruct.Relationship != nil && fieldStruct.Relationship.Kind == "belongs_to" {
+							metaID := metaValue.Meta.GetResource().GetMetas([]string{fieldStruct.Relationship.ForeignFieldNames[0]})[0]
+							err = metaID.GetSetter()(record, metaValue, context)
+							return err
+						}
+					}
+
 					field.Set(utils.NewValue(field.Type()).Elem())
 				}
 
