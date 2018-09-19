@@ -169,7 +169,7 @@ func (crud *CRUD) FindOneBasic(key string) (result BasicValue, err error) {
 	return resultInterface.(BasicValue), nil
 }
 
-func (crud *CRUD) FindOne(result interface{}) (err error) {
+func (crud *CRUD) FindOne(result interface{}, key ...string) (err error) {
 	context := crud.context.Clone()
 	var (
 		primaryQuerySQL string
