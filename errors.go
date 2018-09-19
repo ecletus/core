@@ -1,6 +1,12 @@
 package core
 
-import "strings"
+import (
+	"fmt"
+	"reflect"
+	"strings"
+
+	"github.com/moisespsena/go-error-wrap"
+)
 
 // Errors is a struct that used to hold errors array
 type Errors struct {
@@ -39,7 +45,23 @@ func (errs Errors) GetErrors() []error {
 	return errs.errors
 }
 
+func (errs Errors) String() string {
+	var strs = make([]string, len(errs.errors))
+	for i, err := range errs.errors {
+		if ew, ok := err.(errwrap.ErrorWrapper); ok {
+			sub := fmt.Sprintf("[%s]: %s", errwrap.TypeOf(ew.Err()), ew.Err())
+			ew.Prev().EachType(func(typ reflect.Type, err error) error {
+				sub += fmt.Sprintf("\n    from > [%s]: %s", typ, err)
+				return nil
+			})
+			strs[i] = sub
+		} else {
+			strs[i] = fmt.Sprint(err)
+		}
+	}
+	return strings.Join(strs, "\n -")
+}
+
 type errorsInterface interface {
 	GetErrors() []error
 }
-
