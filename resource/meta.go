@@ -3,10 +3,11 @@ package resource
 import (
 	"reflect"
 	"strings"
-	"github.com/moisespsena-go/aorm"
+
 	"github.com/aghape/core"
 	"github.com/aghape/core/utils"
 	"github.com/aghape/roles"
+	"github.com/moisespsena-go/aorm"
 )
 
 type MetaScanner interface {
@@ -17,6 +18,7 @@ type MetaScanner interface {
 type Metaor interface {
 	GetName() string
 	GetFieldName() string
+	GetFieldStruct() *aorm.StructField
 	GetSetter() func(resource interface{}, metaValue *MetaValue, context *core.Context) error
 	GetFormattedValuer() func(recorde interface{}, context *core.Context) interface{}
 	GetValuer() func(recorde interface{}, context *core.Context) interface{}
@@ -110,6 +112,11 @@ func (meta *Meta) IsInline() bool {
 // GetBaseResource get base resource from meta
 func (meta *Meta) GetBaseResource() Resourcer {
 	return meta.BaseResource
+}
+
+// GetFieldStruct get aorm field struct
+func (meta *Meta) GetFieldStruct() *aorm.StructField {
+	return meta.FieldStruct
 }
 
 // GetContextResource get resource from meta

@@ -103,19 +103,13 @@ func New(value interface{}, id, uid string) *Resource {
 
 	pkgPath := reflect.TypeOf(value).Elem().PkgPath()
 	pkg := pkgPath
-	var groupSuffix []string
 	parts := strings.Split(pkg, string(os.PathSeparator))
 
 	for i, pth := range parts {
 		if pth == "models" {
-			groupSuffix = parts[i:]
 			pkg = filepath.Join(parts[:i]...)
 			break
 		}
-	}
-
-	if len(groupSuffix) == 0 {
-		groupSuffix = append(groupSuffix, "models")
 	}
 
 	var (
@@ -129,12 +123,12 @@ func New(value interface{}, id, uid string) *Resource {
 			PkgPath:            pkgPath,
 			FakeScope:          core.FakeDB.NewScope(value),
 			Data:               make(config.OtherConfig),
-			I18nPrefix:         i18nmod.PkgToGroup(pkg, groupSuffix...) + "." + utils.ModelType(value).Name(),
 			Layouts:            make(map[string]LayoutInterface),
 			newStructCallbacks: []func(obj interface{}, site core.SiteInterface){},
 		}
 	)
 
+	res.SetI18nModel(value)
 	res.Value = value
 	res.SetDispatcher(res)
 	res.SetPrimaryFields()
@@ -194,7 +188,21 @@ func (res *Resource) SetI18nName(name string) {
 }
 
 func (res *Resource) SetI18nModel(value interface{}) {
-	res.I18nPrefix = i18nmod.StructGroup(value)
+	pkgPath := reflect.TypeOf(value).Elem().PkgPath()
+	pkg := pkgPath
+	var groupSuffix []string
+	parts := strings.Split(pkg, string(os.PathSeparator))
+	for i, pth := range parts {
+		if pth == "models" {
+			groupSuffix = parts[i:]
+			pkg = filepath.Join(parts[:i]...)
+			break
+		}
+	}
+	if len(groupSuffix) == 0 {
+		groupSuffix = append(groupSuffix, "models")
+	}
+	res.I18nPrefix = i18nmod.PkgToGroup(pkg, groupSuffix...) + "." + utils.ModelType(value).Name()
 }
 
 func (res *Resource) GetID() string {
@@ -318,6 +326,16 @@ func (res *Resource) ToPrimaryQueryParams(primaryValue string) (string, []interf
 // ToPrimaryQueryParamsFromMetaValue to primary query params from meta values
 func (res *Resource) ToPrimaryQueryParamsFromMetaValue(metaValues *MetaValues) (string, []interface{}) {
 	return ToPrimaryQueryParamsFromMetaValue(res, metaValues)
+}
+
+// ToPrimaryQueryParamsFromString to primary query params from string value
+func (res *Resource) ToPrimaryQueryParamsFromString(value string, exclude ...bool) (string, []interface{}) {
+	return ToPrimaryQueryParamsFromString(res, value, exclude...)
+}
+
+// ToPrimaryQueryParamsFromValues to primary query params from slice values
+func (res *Resource) ToPrimaryQueryParamsFromValues(exclude bool, values ...interface{}) (string, []interface{}) {
+	return ToPrimaryQueryParamsFromValues(res, exclude, values...)
 }
 
 func (res *Resource) Crud(ctx *core.Context) *CRUD {
