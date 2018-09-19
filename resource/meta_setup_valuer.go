@@ -40,7 +40,8 @@ func setupValuer(meta *Meta, fieldName string, record interface{}) {
 							f.Field.Set(reflect.New(f.Field.Type().Elem()))
 						}
 
-						context.DB.Model(value).AutoInlinePreload(value).Related(f.Field.Addr().Interface(), meta.FieldName)
+						relateValue := f.Field.Addr().Interface()
+						context.DB.Model(value).AutoInlinePreload(relateValue).Related(relateValue, meta.FieldName)
 					}
 				}
 
