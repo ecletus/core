@@ -219,7 +219,7 @@ func ParseTagOption(str string) map[string]string {
 
 // ExitWithMsg debug error messages and print stack
 func ExitWithMsg(msg interface{}, value ...interface{}) {
-	fmt.Printf("\n"+filenameWithLineNum()+"\n"+fmt.Sprint(msg)+"\n", value...)
+	fmt.Fprintf(os.Stderr, "\n"+filenameWithLineNum()+"\n"+fmt.Sprint(msg)+"\n", value...)
 	debug.PrintStack()
 }
 
@@ -370,14 +370,39 @@ func RenderHtmlTemplate(tpl string, data interface{}) template.HTML {
 }
 
 func TypeId(tp interface{}) string {
-	p := reflect.ValueOf(tp)
+	typ := IndirectType(tp)
+	return typ.PkgPath() + "." + typ.Name()
+}
 
-	for p.Kind() == reflect.Ptr {
-		p = p.Elem()
+func IndirectType(v interface{}) (typ reflect.Type) {
+	var isType bool
+	switch vt := v.(type) {
+	case reflect.Value:
+		typ = vt.Type()
+	case *reflect.Value:
+		typ = vt.Type()
+	case reflect.Type:
+		typ = vt
+		isType = true
+	default:
+		typ = reflect.ValueOf(vt).Type()
 	}
 
-	t := p.Type()
-	return t.PkgPath() + "." + t.Name()
+	if isType {
+		for typ.Kind() == reflect.Ptr {
+			typ = typ.Elem()
+		}
+	} else {
+		for {
+			switch typ.Kind() {
+			case reflect.Ptr, reflect.Interface:
+				typ = typ.Elem()
+			default:
+				return
+			}
+		}
+	}
+	return
 }
 
 func StringOrEmpty(value interface{}) string {

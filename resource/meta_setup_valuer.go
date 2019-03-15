@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/aghape/core"
+	"github.com/moisespsena-go/aorm"
 )
 
 func setupValuer(meta *Meta, fieldName string, record interface{}) {
@@ -24,6 +25,19 @@ func setupValuer(meta *Meta, fieldName string, record interface{}) {
 
 	if meta.FieldStruct != nil {
 		meta.Valuer = func(value interface{}, context *core.Context) interface{} {
+			if value == nil {
+				return nil
+			}
+			if context == nil {
+				v := reflect.ValueOf(value)
+				for _, f := range strings.Split(meta.FieldName, ".") {
+					if v = reflect.Indirect(v).FieldByName(f); !v.IsValid() {
+						return nil
+					}
+				}
+
+				return v.Interface()
+			}
 			scope := context.DB.NewScope(value)
 			fieldName := meta.FieldName
 			if nestedField {
@@ -32,16 +46,38 @@ func setupValuer(meta *Meta, fieldName string, record interface{}) {
 			}
 
 			if f, ok := scope.FieldByName(fieldName); ok {
-				if relationship := f.Relationship; relationship != nil && f.Field.CanAddr() && !scope.PrimaryKeyZero() {
-					if (relationship.Kind == "has_many" || relationship.Kind == "many_to_many") && f.Field.Len() == 0 {
-						context.DB.Model(value).Related(f.Field.Addr().Interface(), meta.FieldName)
-					} else if (relationship.Kind == "has_one" || relationship.Kind == "belongs_to") && context.DB.NewScope(f.Field.Interface()).PrimaryKeyZero() {
-						if f.Field.Kind() == reflect.Ptr && f.Field.IsNil() {
-							f.Field.Set(reflect.New(f.Field.Type().Elem()))
-						}
+				if relationship := f.Relationship; relationship != nil && f.Field.CanAddr() {
+					if !scope.PrimaryKeyZero() {
+						if (relationship.Kind == "has_many" || relationship.Kind == "many_to_many") && f.Field.Len() == 0 {
+							context.DB.Model(value).Related(f.Field.Addr().Interface(), meta.FieldName)
+						} else if relationship.Kind == "has_one" || relationship.Kind == "belongs_to" {
+							if f.Field.Kind() == reflect.Ptr && f.Field.IsNil() {
+								var idValues []interface{}
+								value := reflect.Indirect(reflect.ValueOf(value))
+								for _, fieldName := range relationship.ForeignFieldNames {
+									if idValue := value.FieldByName(fieldName); idValue.IsValid() {
+										idValues = append(idValues, idValue.Interface())
+									} else {
+										idValues = append(idValues, nil)
+									}
+								}
 
-						relateValue := f.Field.Addr().Interface()
-						context.DB.Model(value).AutoInlinePreload(relateValue).Related(relateValue, meta.FieldName)
+								if aorm.Key(idValues...).String() == "" {
+									return nil
+								}
+
+								if f.Field.Kind() == reflect.Ptr && f.Field.IsNil() {
+									f.Field.Set(reflect.New(f.Field.Type().Elem()))
+								}
+							}
+
+							if scope := context.DB.NewScope(f.Field.Interface()); scope.PrimaryKeyZero() {
+								relatedValue := reflect.Indirect(f.Field).Addr().Interface()
+								context.DB.Model(value).AutoInlinePreload(relatedValue).Related(relatedValue, meta.FieldName)
+							}
+						}
+					} else if f.Field.Kind() == reflect.Ptr && f.Field.IsNil() {
+						return nil
 					}
 				}
 

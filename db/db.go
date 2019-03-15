@@ -1,18 +1,19 @@
 package db
 
 import (
-	"fmt"
-	"os"
-	"errors"
-	"github.com/moisespsena-go/aorm"
-	"sync"
-	"reflect"
-	"context"
-	"os/exec"
-	"time"
-	"io"
 	"bufio"
+	"context"
+	"errors"
+	"fmt"
+	"io"
+	"os"
+	"os/exec"
+	"reflect"
+	"sync"
+	"time"
+
 	qorconfig "github.com/aghape/core/config"
+	"github.com/moisespsena-go/aorm"
 	_ "github.com/moisespsena-go/aorm/dialects/mysql"
 	_ "github.com/moisespsena-go/aorm/dialects/postgres"
 	_ "github.com/moisespsena-go/aorm/dialects/sqlite"
@@ -22,23 +23,40 @@ var FakeDB = &aorm.DB{}
 
 type RawDBConnection interface {
 	io.Closer
+	Open() error
 	Error() *bufio.Reader
 	Out() *bufio.Reader
 	In() io.Writer
+	Do(func(c RawDBConnection))
 }
 
 type CmdDBConnection struct {
-	Cmd *exec.Cmd
-	in  io.Writer
-	err *bufio.Reader
-	out *bufio.Reader
+	cmd       *exec.Cmd
+	open      func() (*exec.Cmd, error)
+	in        io.Writer
+	err       *bufio.Reader
+	out       *bufio.Reader
+	closer    func(c *CmdDBConnection) error
+	running   bool
 }
 
-func NewCmdDBConnection(cmd *exec.Cmd) *CmdDBConnection {
-	in, _ := cmd.StdinPipe()
-	o, _ := cmd.StdoutPipe()
-	cmd.Stderr = os.Stderr
-	return &CmdDBConnection{cmd, in, nil, bufio.NewReader(o)}
+func NewCmdDBConnection(cmd *exec.Cmd, closer func(c *CmdDBConnection) error) *CmdDBConnection {
+	return &CmdDBConnection{cmd: cmd, closer: closer}
+}
+
+func (c *CmdDBConnection) Open() (err error) {
+	c.in, _ = c.cmd.StdinPipe()
+	o, _ := c.cmd.StdoutPipe()
+	c.out = bufio.NewReader(o)
+	c.cmd.Stderr = os.Stderr
+	if err = c.cmd.Start(); err != nil {
+		return err
+	}
+	return nil
+}
+
+func (c *CmdDBConnection) Do(f func(c RawDBConnection)) {
+	f(c)
 }
 
 func (c *CmdDBConnection) Error() *bufio.Reader {
@@ -53,20 +71,29 @@ func (c *CmdDBConnection) In() io.Writer {
 }
 
 func (c *CmdDBConnection) Close() error {
-	if c.Cmd.ProcessState == nil {
-		_, err := c.In().Write([]byte("\\q\\n"))
+	defer func() {
+		c.running = false
+	}()
+	if c.cmd == nil || c.cmd.Process == nil {
+		c.cmd = nil
+		return nil
+	}
+	if c.cmd.ProcessState == nil {
+		err := c.closer(c)
 		if err != nil {
 			return err
 		} else {
 			<-time.After(time.Second)
-			return c.Cmd.Process.Kill()
+			if c.cmd.ProcessState == nil {
+				return c.cmd.Process.Kill()
+			}
 		}
 	}
-	if c.Cmd.ProcessState.Exited() {
-		if c.Cmd.ProcessState.Success() {
+	if c.cmd.ProcessState.Exited() {
+		if c.cmd.ProcessState.Success() {
 			return nil
 		}
-		return errors.New(c.Cmd.ProcessState.String())
+		return errors.New(c.cmd.ProcessState.String())
 	}
 	return nil
 }
@@ -96,44 +123,16 @@ func (f Factories) Factory(config *qorconfig.DBConfig) (db *aorm.DB, err error) 
 }
 
 var SystemFactories = Factories{
-	"mysql": func(config *qorconfig.DBConfig) (db *aorm.DB, err error) {
-		return aorm.Open("mysql", config.DSN())
-	},
-	"postgres": func(config *qorconfig.DBConfig) (db *aorm.DB, err error) {
-		return aorm.Open("postgres", config.DSN())
-	},
-	"sqlite": func(config *qorconfig.DBConfig) (db *aorm.DB, err error) {
-		return aorm.Open("sqlite3", config.DSN())
-	},
+	"mysql":    MySQLfacotry,
+	"postgres": PostgresFactory,
+	"sqlite":   Sqlite3Factory,
+	"sqlite3":  Sqlite3Factory,
 }
 
 var SystemRawFactories = RawFactories{
-	"postgres": func(ctx context.Context, config *qorconfig.DBConfig) (db RawDBConnection, err error) {
-		var cmd *exec.Cmd
-		if ctx == nil {
-			cmd = exec.Command("psql")
-		} else {
-			cmd = exec.CommandContext(ctx, "psql")
-		}
-		cmd.Env = os.Environ()
-		cmd.Env = append(cmd.Env,
-			fmt.Sprintf("PGUSER=%v", config.User),
-			fmt.Sprintf("PGPASS=%v", config.Password),
-			fmt.Sprintf("PGDATABASE=%v", config.Name))
-		if config.Host != "" {
-			cmd.Env = append(cmd.Env, fmt.Sprintf("PGHOST=%v", config.Host))
-		}
-		if config.Port != 0 {
-			cmd.Env = append(cmd.Env, fmt.Sprintf("PGPORT=%v", config.Port))
-		}
-
-		con := NewCmdDBConnection(cmd)
-		err = cmd.Start()
-		if err != nil {
-			return nil, err
-		}
-		return con, nil
-	},
+	"postgres": PostgreSQLRawFactory,
+	"sqlite":   Sqlite3RawFactory,
+	"sqlite3":  Sqlite3RawFactory,
 }
 
 type FieldCacher struct {

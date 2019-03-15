@@ -25,8 +25,17 @@ type processor struct {
 
 // DecodeToResource decode meta values to resource result
 func DecodeToResource(res Resourcer, result interface{}, metaValues *MetaValues, context *core.Context) *processor {
+	if !metaValues.IsEmpty() && metaValues.Values[0].Parent.Meta == nil {
+		metaValues.Values[0].Parent.Meta = &Meta{Resource: res}
+	}
 	scope := &aorm.Scope{Value: result}
-	return &processor{Resource: res, Result: result, Context: context, MetaValues: metaValues, newRecord: scope.PrimaryKeyZero()}
+	return &processor{
+		Resource:   res,
+		Result:     result,
+		Context:    context,
+		MetaValues: metaValues,
+		newRecord:  scope.PrimaryKeyZero(),
+	}
 }
 
 func (processor *processor) checkSkipLeft(errs ...error) bool {
@@ -80,9 +89,9 @@ func (processor *processor) decode() (errors []error) {
 			continue
 		}
 
-		if processor.newRecord && !meta.HasPermission(roles.Create, processor.Context) {
+		if processor.newRecord && !core.HasPermission(meta, roles.Create, processor.Context) {
 			continue
-		} else if !meta.HasPermission(roles.Update, processor.Context) {
+		} else if !core.HasPermission(meta, roles.Update, processor.Context) {
 			continue
 		}
 

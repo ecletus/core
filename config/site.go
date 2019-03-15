@@ -1,12 +1,15 @@
 package config
 
 import (
-	"fmt"
 	"errors"
+	"fmt"
 	"strings"
-	"github.com/aghape/core/utils/str"
-	"github.com/aghape/oss/ftp"
+
+	"github.com/aghape/oss"
+	"github.com/aghape/oss/factories"
+	"github.com/moisespsena-go/stringvar"
 	"github.com/moisespsena/go-assetfs"
+	"github.com/moisespsena/go-error-wrap"
 )
 
 type OtherConfig map[string]interface{}
@@ -92,7 +95,7 @@ func (oc OtherConfig) Get(key string) (value interface{}, ok bool) {
 	return
 }
 
-func (oc OtherConfig) GetBool(key string, defaul ... bool) bool {
+func (oc OtherConfig) GetBool(key string, defaul ...bool) bool {
 	v, _ := oc.Get(key)
 	if v != nil {
 		return v.(bool)
@@ -114,7 +117,7 @@ func (oc OtherConfig) GetString(key string, defaul ...string) string {
 	return ""
 }
 
-func (oc OtherConfig) GetInt(key string, defaul ... int) int {
+func (oc OtherConfig) GetInt(key string, defaul ...int) int {
 	v, _ := oc.Get(key)
 	if v != nil {
 		return v.(int)
@@ -161,7 +164,6 @@ func (oc OtherConfig) GetAssetFS(key string, defaul ...interface{}) assetfs.Inte
 	return oc.GetInterface(key, defaul...).(assetfs.Interface)
 }
 
-
 func (oc OtherConfig) On(key string, f func(ok bool, value interface{}) interface{}) interface{} {
 	v, ok := oc.Get(key)
 	return f(ok, v)
@@ -172,34 +174,35 @@ type SiteConfig struct {
 	Title        string
 	Domains      []string
 	Db           map[string]*DBConfig
-	MediaStorage map[string]*MediaStorageConfig
+	MediaStorage map[string]map[string]interface{}
 	RootDir      string
 	SMTP         *SMTPConfig
 	OtherConfig  OtherConfig
 	PublicURL    string
 }
 
-func (s *SiteConfig) Prepare(siteName string, args *Args) {
+func (s *SiteConfig) Prepare(siteName string, args *stringvar.StringVar) (err error) {
 	if s.RootDir == "" {
 		s.RootDir = "{ROOT}/system/sites/{SITE_NAME}"
 	}
 
-	args = args.Merge(map[string]string{
-		"SITE_NAME": siteName,
-	})
+	args = args.Child("SITE_NAME", siteName)
 
-	args.Vars().FormatPathPtr(&s.RootDir)
-	args = args.Merge(map[string]string{
-		"SITE_ROOT": s.RootDir,
-	})
+	args.FormatPathPtr(&s.RootDir)
+	args = args.Child("SITE_ROOT", s.RootDir)
+	var storage oss.StorageInterface
 
 	for mediaName, media := range s.MediaStorage {
-		media.Prepare(siteName, mediaName, args)
+		if storage, err = s.PrepareMediaStorage(siteName, mediaName, args); err != nil {
+			return errwrap.Wrap(err, "Prepare Media Storage")
+		}
+		media["@storage"] = storage
 	}
 
 	for dbName, db := range s.Db {
 		db.Prepare(siteName, dbName, args)
 	}
+	return nil
 }
 
 type SMTPConfig struct {
@@ -231,79 +234,32 @@ func (db *DBConfig) DSN() string {
 		}
 		return fmt.Sprintf("postgres://%v:%v@%v/%v?sslmode=%v",
 			db.User, db.Password, db.Host, db.Name, ssl)
-	case "sqlite":
+	case "sqlite", "sqlite3":
 		return db.Name
 	}
 	return ""
 }
 
-type MediaStorageConfig struct {
-	RootDir string
-	Ftp     *ftp.Config
-}
-
-type Args struct {
-	Home string
-	Root string
-	data map[string]string
-}
-
-func NewArgs(home, root string) *Args {
-	if root == "" {
-		root = "./public"
+func (s *SiteConfig) PrepareMediaStorage(siteName, mediaName string, vrs *stringvar.StringVar) (storage oss.StorageInterface, err error) {
+	vrs = vrs.Child("MEDIA_NAME", mediaName)
+	vrs.FormatPathPtr(&s.RootDir)
+	fctx := factories.NewContext()
+	fctx.Var = vrs
+	cfg := s.MediaStorage[mediaName]
+	typName := cfg["type"].(string)
+	factory, ok := factories.Get(typName)
+	if !ok {
+		return nil, fmt.Errorf("Storage Factory %q does not exists", typName)
 	}
-	return &Args{home, root, nil}
+	storage, err = factory.Factory(fctx, cfg)
+	if err != nil {
+		return nil, errwrap.Wrap(err, "Factory %q", typName)
+	}
+	return
 }
 
-func (a *Args) Merge(merges ...map[string]string) *Args {
-	r := &Args{a.Home, a.Root, make(map[string]string)}
-	for k, v := range a.data {
-		r.data[k] = v
-	}
-
-	for _, m := range merges {
-		for k, v := range m {
-			r.data[k] = v
-		}
-	}
-	return r
-}
-
-func (v *Args) Vars(merges ...map[string]string) (vrs *str.Vars) {
-	vrs = &str.Vars{Data: map[string]string{
-		"HOME": v.Home,
-		"ROOT": v.Root,
-	}}
-
-	return vrs.Merge(v.data).Merge(merges...)
-}
-
-func (m *MediaStorageConfig) Prepare(siteName, mediaName string, args *Args) {
-	if m.RootDir == "" {
-		m.RootDir = "{SITE_ROOT}/media"
-	}
-
-	vrs := args.Vars(map[string]string{
-		"MEDIA_NAME": mediaName,
-	})
-
-	vrs.FormatPathPtr(&m.RootDir)
-
-	if m.Ftp != nil {
-		vrs.FormatPathPtr(&m.Ftp.RootDir).
-			FormatPtr(&m.Ftp.Endpoint, &m.Ftp.User, &m.Ftp.Password)
-
-		for i, host := range m.Ftp.Hosts {
-			vrs.FormatPtr(&host)
-			m.Ftp.Hosts[i] = host
-		}
-	}
-}
-
-func (d *DBConfig) Prepare(siteName, dbName string, args *Args) {
-	vrs := args.Vars(map[string]string{
-		"DB_NAME": dbName,
-	})
+func (d *DBConfig) Prepare(siteName, dbName string, args *stringvar.StringVar) {
+	vrs := args.Child("DB_NAME", dbName)
 	vrs.FormatPathPtr(&d.Name).
 		FormatPtr(&d.Password, &d.User, &d.Host)
 }

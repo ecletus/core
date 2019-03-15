@@ -4,9 +4,9 @@ import (
 	"context"
 	"net/http"
 
-	"github.com/moisespsena/go-i18n-modular/i18nmod"
-	"github.com/moisespsena/go-route"
 	"github.com/aghape/core/config"
+	"github.com/moisespsena-go/xroute"
+	"github.com/moisespsena/go-i18n-modular/i18nmod"
 )
 
 type ContextFactory struct {
@@ -23,7 +23,7 @@ func (cf *ContextFactory) NewContextForRequest(req *http.Request, prefix ...stri
 
 	var ctx *Context
 
-	URL := route.GetOriginalUrl(req)
+	URL := xroute.GetOriginalURL(req)
 	if URL == nil {
 		urlCopy := *req.URL
 		URL = &urlCopy
@@ -38,6 +38,7 @@ func (cf *ContextFactory) NewContextForRequest(req *http.Request, prefix ...stri
 			Prefix:         stringOrDefault(rctx.Value("PREFIX")),
 			StaticURL:      stringOrDefault(rctx.Value("STATIC_URL")),
 			Translator:     cf.Translator,
+			DefaultLocale:  cf.Translator.DefaultLocale,
 		}
 		ctx.AsTop()
 		if len(prefix) > 0 && prefix[0] != "" {
@@ -49,7 +50,7 @@ func (cf *ContextFactory) NewContextForRequest(req *http.Request, prefix ...stri
 
 	req = req.WithContext(context.WithValue(req.Context(), CONTEXT_KEY, ctx))
 	if ctx.RouteContext == nil {
-		req, ctx.RouteContext = route.GetOrNewRouteContextForRequest(req)
+		req, ctx.RouteContext = xroute.GetOrNewRouteContextForRequest(req)
 	}
 	ctx.Request = req
 	return req, ctx
@@ -81,7 +82,7 @@ func (cf *ContextFactory) SetSkipPrefixToRequest(r *http.Request, prefix string)
 	return r.WithContext(context.WithValue(r.Context(), PREFIX+".skip_prefix", prefix))
 }
 
-func (cf *ContextFactory) NewContextFromChain(chain *route.ChainHandler) (*http.Request, *Context) {
+func (cf *ContextFactory) NewContextFromChain(chain *xroute.ChainHandler) (*http.Request, *Context) {
 	prefix, r := cf.GetCleanSkipPrefixFromRequest(chain.Request())
 	chain.SetRequest(r)
 	return cf.NewContextFromRequestPair(chain.Writer, chain.Request(), prefix)

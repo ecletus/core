@@ -2,6 +2,8 @@ package resource
 
 import (
 	"reflect"
+
+	"github.com/moisespsena-go/aorm"
 )
 
 // context.Data().Set("skip.fragments", true)
@@ -11,28 +13,45 @@ type LayoutInterface interface {
 	GetType() interface{}
 	Prepare(crud *CRUD) *CRUD
 	FormatResult(crud *CRUD, result interface{}) interface{}
+	Select(columns ...interface{})
+	GetSelect() []interface{}
 }
 
 type Layout struct {
 	StructValue
 	PrepareFunc      func(crud *CRUD) *CRUD
 	FormatResultFunc func(crud *CRUD, result interface{}) interface{}
-	SelectColumns    []interface{}
+	selects          []interface{}
 }
 
 func (l *Layout) GetType() interface{} {
 	return l.Value
 }
 
-func (l *Layout) Select(columns ...interface{}) *Layout {
-	l.SelectColumns = columns
-	return l
+func (l *Layout) Select(columns ...interface{}) {
+	l.selects = columns
+}
+
+func (l *Layout) GetSelect() []interface{} {
+	return l.selects
 }
 
 func (l *Layout) Prepare(crud *CRUD) *CRUD {
-	if l.SelectColumns != nil {
-		crud.SetDB(crud.DB().Select(l.SelectColumns))
+	if len(l.selects) > 0 {
+		var iqs aorm.InlineQueries
+		
+		for _, s := range l.selects {
+			switch st := s.(type) {
+			case string:
+				iqs = append(iqs, aorm.IQ(st))
+			case *aorm.WithInlineQuery:
+				iqs = append(iqs, st)
+			}
+		}
+		
+		crud.SetDB(crud.DB().Select(iqs.Join()))
 	}
+	
 	if l.PrepareFunc != nil {
 		return l.PrepareFunc(crud)
 	}
@@ -57,8 +76,11 @@ func ResultFormatter(slice interface{}, formatter func(i int, record interface{}
 		makeSlice[0](l)
 	}
 	for i := 0; i < l; i++ {
-		r := sliceValue.Index(i).Addr().Interface()
-		formatter(i, r)
+		r := sliceValue.Index(i)
+		if r.Kind() != reflect.Ptr {
+			r = r.Addr()
+		}
+		formatter(i, r.Interface())
 	}
 }
 

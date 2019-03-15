@@ -20,6 +20,7 @@ type CRUD struct {
 	metaValues  *MetaValues
 	parent      *CRUD
 	layout      LayoutInterface
+	Recorde     interface{}
 }
 
 func NewCrud(res Resourcer, ctx *core.Context) *CRUD {
@@ -141,7 +142,7 @@ func (crud *CRUD) FindManyLayout(layout ...interface{}) (result interface{}, err
 		crud = crud.SetLayout(layout[0])
 	}
 	crud = crud.layout.Prepare(crud)
-	slice := crud.res.NewSlice()
+	slice := crud.res.NewSlicePtr()
 	if err = crud.FindMany(slice); err != nil {
 		return nil, err
 	}
@@ -198,7 +199,7 @@ func (crud *CRUD) FindOne(result interface{}, key ...string) (err error) {
 	if primaryQuerySQL != "" {
 		if crud.metaValues != nil {
 			if destroy := crud.metaValues.Get("_destroy"); destroy != nil {
-				if fmt.Sprint(destroy.Value) != "0" && crud.res.HasPermission(roles.Delete, context) {
+				if fmt.Sprint(destroy.Value) != "0" && core.HasPermission(crud.res, roles.Delete, context) {
 					context.DB.Delete(result, append([]interface{}{primaryQuerySQL}, primaryParams...)...)
 					return ErrProcessorSkipLeft
 				}
@@ -252,7 +253,11 @@ func (crud *CRUD) FindMany(result interface{}) (err error) {
 		return err
 	}
 
-	if err = context.DB.Set("gorm:order_by_primary_key", "DESC").Find(result).Error; err != nil {
+	if !context.DB.HasOrder() {
+		context.DB = context.DB.Set("gorm:order_by_primary_key", "DESC")
+	}
+
+	if err = context.DB.Find(result).Error; err != nil {
 		crud.triggerDBAction(e.error(err))
 		return err
 	}
@@ -263,7 +268,7 @@ func (crud *CRUD) FindMany(result interface{}) (err error) {
 
 func (crud *CRUD) Create(record interface{}) error {
 	if crud.context.GetDB().NewScope(record).PrimaryKeyZero() &&
-		crud.res.HasPermission(roles.Create, crud.context) {
+		core.HasPermission(crud.res, roles.Create, crud.context) {
 		return crud.CallCreate(record)
 	}
 	return roles.ErrPermissionDenied
@@ -275,28 +280,29 @@ func (crud *CRUD) CallCreate(record interface{}) (err error) {
 
 func (crud *CRUD) Update(record interface{}) error {
 	if !crud.context.GetDB().NewScope(record).PrimaryKeyZero() &&
-		crud.res.HasPermission(roles.Update, crud.context) {
+		core.HasPermission(crud.res, roles.Update, crud.context) {
 		return crud.CallUpdate(record)
 	}
 	return roles.ErrPermissionDenied
 }
 
-func (crud *CRUD) CallUpdate(record interface{}) (err error) {
-	return crud.callSave(record, E_DB_ACTION_SAVE)
+func (crud *CRUD) CallUpdate(recorde interface{}) (err error) {
+	return crud.callSave(recorde, E_DB_ACTION_SAVE)
 }
 
-func (crud *CRUD) SaveOrCreate(record interface{}) error {
-	if crud.context.GetDB().NewScope(record).PrimaryKeyZero() {
-		if crud.res.HasPermission(roles.Create, crud.context) {
-			return crud.CallCreate(record)
+func (crud *CRUD) SaveOrCreate(recorde interface{}) error {
+	if crud.context.GetDB().NewScope(recorde).PrimaryKeyZero() {
+		if core.HasPermission(crud.res, roles.Create, crud.context) {
+			return crud.CallCreate(recorde)
 		}
-	} else if crud.res.HasPermission(roles.Update, crud.context) {
-		return crud.CallUpdate(record)
+	} else if core.HasPermission(crud.res, roles.Update, crud.context) {
+		return crud.CallUpdate(recorde)
 	}
 	return roles.ErrPermissionDenied
 }
 
 func (crud *CRUD) callSave(recorde interface{}, eventName DBActionEvent) (err error) {
+	defer crud.recorde(recorde)()
 	var context = crud.context.Clone()
 
 	e := NewDBEvent(eventName, context)
@@ -318,11 +324,14 @@ func (crud *CRUD) callSave(recorde interface{}, eventName DBActionEvent) (err er
 	return
 }
 
-func (crud *CRUD) CallDelete(record interface{}) (err error) {
+func (crud *CRUD) CallDelete(recorde interface{}) (err error) {
+	defer crud.recorde(recorde)()
 	if primaryQuerySQL, primaryParams := StringToPrimaryQuery(crud.res, crud.context.ResourceID); primaryQuerySQL != "" {
-		if db := crud.context.GetDB(); !db.First(record, append([]interface{}{primaryQuerySQL}, primaryParams...)...).RecordNotFound() {
+		db := crud.context.GetDB()
+		db = db.First(recorde, append([]interface{}{primaryQuerySQL}, primaryParams...)...)
+		if !db.RecordNotFound() {
 			e := NewDBEvent(E_DB_ACTION_DELETE, crud.context)
-			e.SetResult(record)
+			e.SetResult(recorde)
 
 			if err = crud.triggerDBAction(e.before()); err != nil {
 				return
@@ -332,7 +341,7 @@ func (crud *CRUD) CallDelete(record interface{}) (err error) {
 				return
 			}
 
-			if err = db.Delete(record).Error; err != nil {
+			if err = db.Delete(recorde).Error; err != nil {
 				crud.triggerDBAction(e.error(err))
 			}
 
@@ -344,7 +353,7 @@ func (crud *CRUD) CallDelete(record interface{}) (err error) {
 }
 
 func (crud *CRUD) Delete(record interface{}) (err error) {
-	if crud.res.HasPermission(roles.Delete, crud.context) {
+	if core.HasPermission(crud.res, roles.Delete, crud.context) {
 		return crud.CallDelete(record)
 	}
 	return roles.ErrPermissionDenied
@@ -362,4 +371,12 @@ func (crud *CRUD) triggerDBAction(e *DBEvent) (err error) {
 		}
 	}
 	return nil
+}
+
+func (crud *CRUD) recorde(r interface{}) func() {
+	old := crud.Recorde
+	crud.Recorde = r
+	return func() {
+		crud.Recorde = old
+	}
 }

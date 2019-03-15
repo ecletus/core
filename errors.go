@@ -13,13 +13,15 @@ type Errors struct {
 	errors []error
 }
 
+func NewErrors(e ...error) (errors *Errors) {
+	errors = &Errors{}
+	errors.AddError(e...)
+	return
+}
+
 // Error get formatted error message
 func (errs Errors) Error() string {
-	var errors []string
-	for _, err := range errs.errors {
-		errors = append(errors, err.Error())
-	}
-	return strings.Join(errors, "; ")
+	return errs.String()
 }
 
 // AddError add error to Errors struct
@@ -51,7 +53,7 @@ func (errs Errors) String() string {
 		if ew, ok := err.(errwrap.ErrorWrapper); ok {
 			sub := fmt.Sprintf("[%s]: %s", errwrap.TypeOf(ew.Err()), ew.Err())
 			ew.Prev().EachType(func(typ reflect.Type, err error) error {
-				sub += fmt.Sprintf("\n    from > [%s]: %s", typ, err)
+				sub += fmt.Sprintf("\n    from [%s]: %s", typ, err)
 				return nil
 			})
 			strs[i] = sub

@@ -29,6 +29,7 @@ func (mvs MetaValues) Get(name string) *MetaValue {
 // MetaValue a struct used to hold information when convert inputs from HTTP form, JSON, CSV files and so on to meta values
 // It will includes field name, field value and its configured Meta, if it is a nested resource, will includes nested metas in its MetaValues
 type MetaValue struct {
+	Parent     *MetaValue
 	Name       string
 	Value      interface{}
 	Index      int
@@ -37,7 +38,7 @@ type MetaValue struct {
 	error      error
 }
 
-func decodeMetaValuesToField(res Resourcer, field reflect.Value, metaValue *MetaValue, context *core.Context) (err error) {
+func decodeMetaValuesToField(res Resourcer, field reflect.Value, metaValue *MetaValue, context *core.Context, merge ...bool) (err error) {
 	//if field.Kind() == reflect.Struct {
 	if metaValue.Meta.IsInline() {
 		typ := field.Type()
@@ -45,8 +46,18 @@ func decodeMetaValuesToField(res Resourcer, field reflect.Value, metaValue *Meta
 		if isPtr {
 			typ = typ.Elem()
 		}
-		value := reflect.New(typ)
-		associationProcessor := DecodeToResource(res, value.Interface(), metaValue.MetaValues, context)
+		var value = field
+		if len(merge) > 0 && merge[0] {
+			if isPtr {
+				value = field.Elem()
+			} else {
+				value = field.Addr()
+			}
+		} else {
+			value = reflect.New(typ)
+		}
+		valueInterface := value.Interface()
+		associationProcessor := DecodeToResource(res, valueInterface, metaValue.MetaValues, context)
 		err = associationProcessor.Start()
 		if err != nil {
 			return

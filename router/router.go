@@ -1,17 +1,18 @@
 package router
 
 import (
-	"fmt"
 	"errors"
+	"fmt"
+	"net/http"
 	"reflect"
 	"strings"
-	"net/http"
+
 	"github.com/aghape/core"
 )
 
 type Container struct {
 	mountPath string
-	mux interface{}
+	mux       interface{}
 }
 
 func (c *Container) Mux() interface{} {
@@ -33,10 +34,11 @@ type ServeMux struct {
 	container       *Container
 	notFoundHandler http.HandlerFunc
 	handler         ServerHandler
+	ContextFactory  *core.ContextFactory
 }
 
-func NewServerMux() (mux *ServeMux) {
-	mux = &ServeMux{http.NewServeMux(), nil, http.NotFound, nil}
+func NewServerMux(contextFactory *core.ContextFactory) (mux *ServeMux) {
+	mux = &ServeMux{http.NewServeMux(), nil, http.NotFound, nil, contextFactory}
 	mux.ServeMux.Handle("/", mux)
 	return mux
 }
@@ -47,7 +49,7 @@ func (mux *ServeMux) SetHandler(handler ServerHandler) *ServeMux {
 }
 
 func (mux *ServeMux) GetHandler() ServerHandler {
-	return 	mux.handler
+	return mux.handler
 }
 
 func (mux *ServeMux) SetNotFoundHandler(f http.HandlerFunc) *ServeMux {
@@ -99,19 +101,20 @@ func (mux *ServeMux) MountTo(path string, container *http.ServeMux) *http.ServeM
 	}
 
 	path = "/" + path
-	mux.container = &Container{path,container}
+	mux.container = &Container{path, container}
 	container.HandleFunc(path, mux.GetCurrentNotFoundHandler())
-	container.HandleFunc(path + "/", func(w http.ResponseWriter, r *http.Request) {
-		r, _ = core.NewContextFromRequestPair(w, r, path)
+	container.HandleFunc(path+"/", func(w http.ResponseWriter, r *http.Request) {
+		r, _ = mux.ContextFactory.NewContextFromRequestPair(w, r, path)
 		mux.ServeHTTP(w, r)
 	})
 	return container
 }
 
 type PathHandler struct {
-	path string
-	handler http.Handler
+	path            string
+	handler         http.Handler
 	notFoundHandler http.Handler
+	contextFactory  *core.ContextFactory
 }
 
 func (s *PathHandler) Path() string {
@@ -123,13 +126,13 @@ func (s *PathHandler) NotFound(handler http.Handler) *PathHandler {
 	return s
 }
 
-func (s *PathHandler) ServeHTTP(w http.ResponseWriter, r *http.Request)  {
+func (s *PathHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if s.path == "/" {
-		r, _ := core.NewContextFromRequestPair(w, r, s.path)
+		r, _ := s.contextFactory.NewContextFromRequestPair(w, r, s.path)
 		s.handler.ServeHTTP(w, r)
 	} else {
 		if strings.HasPrefix(r.URL.Path, s.path) {
-			r, _ = core.NewContextFromRequestPair(w, r, s.path)
+			r, _ = s.contextFactory.NewContextFromRequestPair(w, r, s.path)
 			s.handler.ServeHTTP(w, r)
 		} else {
 			s.notFoundHandler.ServeHTTP(w, r)
@@ -137,10 +140,11 @@ func (s *PathHandler) ServeHTTP(w http.ResponseWriter, r *http.Request)  {
 	}
 }
 
-func NewPathHandler(path string, handler http.Handler) *PathHandler {
-	return &PathHandler{"/" + strings.Trim(path, "/"), handler, http.NotFoundHandler()}
-}
-
-func RootMux(handler http.Handler) http.Handler {
-	return NewPathHandler(core.CONFIG().Prefix(), handler)
+func NewPathHandler(contextFactory *core.ContextFactory, path string, handler http.Handler) *PathHandler {
+	return &PathHandler{
+		"/" + strings.Trim(path, "/"),
+		handler,
+		http.NotFoundHandler(),
+		contextFactory,
+	}
 }

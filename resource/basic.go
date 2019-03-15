@@ -2,11 +2,18 @@ package resource
 
 import "fmt"
 
+type BasicLabel interface {
+	BasicLabel() string
+}
+type BasicIcon interface {
+	BasicIcon() string
+}
+
 type BasicValue interface {
 	fmt.Stringer
+	BasicLabel
+	BasicIcon
 	GetID() string
-	BasicLabel() string
-	BasicIcon() string
 }
 
 type Basic struct {

@@ -7,6 +7,8 @@ import (
 	"reflect"
 	"strings"
 
+	"github.com/moisespsena/go-path-helpers"
+
 	"github.com/aghape/core"
 	"github.com/aghape/core/config"
 	"github.com/aghape/core/utils"
@@ -24,6 +26,7 @@ const BASIC_LAYOUT = "basic"
 type Resourcer interface {
 	edis.EventDispatcherInterface
 	Struct
+	core.Permissioner
 	GetID() string
 	GetResource() *Resource
 	GetPrimaryFields() []*aorm.StructField
@@ -39,13 +42,13 @@ type Resourcer interface {
 	ParamIDPattern() string
 	ParamIDName() string
 	GetFakeScope() *aorm.Scope
-	HasPermission(mode roles.PermissionMode, context *core.Context) bool
 	BasicValue(ctx *core.Context, recorde interface{}) BasicValue
 	Crud(ctx *core.Context) *CRUD
 	CrudDB(db *aorm.DB) *CRUD
 	Layout(name string, layout LayoutInterface)
 	GetLayoutOrDefault(name string) LayoutInterface
 	GetLayout(name string, defaul ...string) LayoutInterface
+	HasKey() bool
 }
 
 // ConfigureResourceBeforeInitializeInterface if a struct implemented this interface, it will be called before everything when create a resource with the struct
@@ -93,7 +96,9 @@ type Resource struct {
 }
 
 // New initialize qor resource
-func New(value interface{}, id, uid string) *Resource {
+func New(fakeScope *aorm.Scope, id, uid string) *Resource {
+	value := fakeScope.Value
+
 	if id == "" {
 		id = utils.ModelType(value).Name()
 	}
@@ -121,7 +126,7 @@ func New(value interface{}, id, uid string) *Resource {
 			Name:               name,
 			PluralName:         inflection.Plural(name),
 			PkgPath:            pkgPath,
-			FakeScope:          core.FakeDB.NewScope(value),
+			FakeScope:          fakeScope,
 			Data:               make(config.OtherConfig),
 			Layouts:            make(map[string]LayoutInterface),
 			newStructCallbacks: []func(obj interface{}, site core.SiteInterface){},
@@ -153,6 +158,10 @@ func (res *Resource) NewStruct(site ...core.SiteInterface) interface{} {
 	return obj
 }
 
+func (res *Resource) HasKey() bool {
+	return len(res.PrimaryFields) > 0
+}
+
 func (res *Resource) BasicValue(ctx *core.Context, record interface{}) BasicValue {
 	return record.(BasicValue)
 }
@@ -177,7 +186,7 @@ func (res *Resource) GetLayout(name string, defaul ...string) LayoutInterface {
 	if v, ok := res.Layouts[name]; ok {
 		return v
 	}
-	if len(defaul) == 0 && defaul[0] != "" {
+	if len(defaul) > 0 && defaul[0] != "" {
 		return res.GetLayout(defaul[0])
 	}
 	return nil
@@ -188,7 +197,7 @@ func (res *Resource) SetI18nName(name string) {
 }
 
 func (res *Resource) SetI18nModel(value interface{}) {
-	pkgPath := reflect.TypeOf(value).Elem().PkgPath()
+	pkgPath := path_helpers.PkgPathOf(value)
 	pkg := pkgPath
 	var groupSuffix []string
 	parts := strings.Split(pkg, string(os.PathSeparator))
@@ -227,12 +236,14 @@ func (res *Resource) GetFakeScope() *aorm.Scope {
 
 func (res *Resource) SetParent(parent Resourcer, fieldName string) {
 	res.parentResource = parent
-	res.ParentFieldName = fieldName
-	if f, ok := res.FakeScope.FieldByName(fieldName); ok {
-		res.ParentFieldDBName = f.DBName
-		res.ParentFieldVirtual = false
-	} else {
-		res.ParentFieldVirtual = true
+	if fieldName != "" {
+		res.ParentFieldName = fieldName
+		if f, ok := res.FakeScope.FieldByName(fieldName); ok {
+			res.ParentFieldDBName = f.DBName
+			res.ParentFieldVirtual = false
+		} else {
+			res.ParentFieldVirtual = true
+		}
 	}
 }
 
@@ -305,17 +316,16 @@ func (res *Resource) GetMetas([]string) []Metaor {
 	panic("not defined")
 }
 
-// HasPermission check permission of resource
-func (res *Resource) HasPermission(mode roles.PermissionMode, context *core.Context) bool {
+func (res *Resource) HasPermissionE(mode roles.PermissionMode, context *core.Context) (ok bool, err error) {
 	if res == nil || res.Permission == nil {
-		return true
+		return true, roles.ErrDefaultPermission
 	}
 
-	var roles = []interface{}{}
+	var roles_ = []interface{}{}
 	for _, role := range context.Roles {
-		roles = append(roles, role)
+		roles_ = append(roles_, role)
 	}
-	return res.Permission.HasPermission(mode, roles...)
+	return roles.HasPermissionDefaultE(true, res.Permission, mode, roles_...)
 }
 
 // StringToPrimaryQuery to primary query params

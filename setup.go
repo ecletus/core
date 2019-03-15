@@ -100,6 +100,9 @@ func Setup(options SetupOptions) *SetupConfig {
 			if options.Path == "" {
 				options.Path = context.Top().Prefix
 			}
+			if options.Path == "" {
+				options.Path = "/"
+			}
 			if options.MaxAge == 0 {
 				options.MaxAge = setupConfig.cookieMaxAge
 			}

@@ -78,7 +78,10 @@ var (
 )
 
 // ConvertFormToMetaValues convert form to meta values
-func ConvertFormDataToMetaValues(context *core.Context, form url.Values, multipartForm *multipart.Form, metaors []Metaor, prefix string) (*MetaValues, error) {
+func ConvertFormDataToMetaValues(context *core.Context, form url.Values, multipartForm *multipart.Form, metaors []Metaor, prefix string, root ...*MetaValue) (*MetaValues, error) {
+	if len(root) == 0 || root[0] == nil {
+		root = []*MetaValue{&MetaValue{}}
+	}
 	metaValues := &MetaValues{}
 	metaorsMap := map[string]Metaor{}
 	convertedNextLevel := map[string]bool{}
@@ -106,31 +109,49 @@ func ConvertFormDataToMetaValues(context *core.Context, form url.Values, multipa
 
 					prev := metaValues.Get(name)
 					if prev == nil {
-						metaValue = &MetaValue{Name: name, Value: value, Meta: metaorsMap[name]}
+						metaValue = &MetaValue{Parent: root[0], Name: name, Value: value, Meta: metaorsMap[name]}
 					} else if len(files) > 0 {
 						prev.Value = value
 					}
 				} else {
-					metaValue = &MetaValue{Name: name, Value: value, Meta: metaorsMap[name]}
+					metaValue = &MetaValue{Parent: root[0], Name: name, Value: value, Meta: metaorsMap[name]}
 				}
 			} else if matches := isNextLevel.FindStringSubmatch(key); len(matches) > 0 {
 				name := matches[1]
 				if _, ok := convertedNextLevel[name]; !ok {
-					var metaors []Metaor
+					var (
+						hasParent bool
+						parent    = metaValues.Get(name)
+						metaors   []Metaor
+					)
 					convertedNextLevel[name] = true
 					metaor := metaorsMap[matches[2]]
 					if metaor != nil {
 						metaors = metaor.GetContextMetas(nil, context)
 					}
 
-					if children, err := ConvertFormDataToMetaValues(context, form, multipartForm, metaors, prefix+name+"."); err == nil {
+					if parent != nil {
+						hasParent = true
+					} else {
+						parent = &MetaValue{Name: matches[2], Meta: metaor}
+					}
+
+					if children, err := ConvertFormDataToMetaValues(context, form, multipartForm, metaors, prefix+name+".", parent); err == nil {
 						nestedName := prefix + matches[2]
 						if _, ok := nestedStructIndex[nestedName]; ok {
 							nestedStructIndex[nestedName]++
 						} else {
 							nestedStructIndex[nestedName] = 0
 						}
-						metaValue = &MetaValue{Name: matches[2], Meta: metaor, MetaValues: children, Index: nestedStructIndex[nestedName]}
+						if parent.MetaValues == nil {
+							parent.MetaValues = children
+						} else {
+							parent.MetaValues.Values = append(parent.MetaValues.Values, children.Values...)
+						}
+						if !hasParent {
+							parent.Index = nestedStructIndex[nestedName]
+							metaValue = parent
+						}
 					}
 				}
 			}
@@ -168,8 +189,8 @@ func ConvertFormDataToMetaValues(context *core.Context, form url.Values, multipa
 }
 
 // ConvertFormToMetaValues convert form to meta values
-func ConvertFormToMetaValues(context *core.Context, request *http.Request, metaors []Metaor, prefix string) (*MetaValues, error) {
-	return ConvertFormDataToMetaValues(context, request.Form, request.MultipartForm, metaors, prefix)
+func ConvertFormToMetaValues(context *core.Context, request *http.Request, metaors []Metaor, prefix string, root ...*MetaValue) (*MetaValues, error) {
+	return ConvertFormDataToMetaValues(context, request.Form, request.MultipartForm, metaors, prefix, root...)
 }
 
 // Decode decode context to result according to resource definition

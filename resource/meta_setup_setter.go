@@ -37,32 +37,34 @@ func setupSetter(meta *Meta, fieldName string, record interface{}) {
 			defer func() {
 				if r := recover(); r != nil {
 					debug.PrintStack()
+					fmt.Println(r)
 					context.AddError(validations.NewError(record, meta.Name, fmt.Sprintf("Failed to set Meta %v's value with %v, got %v", meta.Name, metaValue.Value, r)))
 				}
 			}()
 
 			field := reflect.Indirect(reflect.ValueOf(record)).FieldByName(fieldName)
 			if field.Kind() == reflect.Ptr {
-				if field.IsNil() && utils.ToString(metaValue.Value) != "" {
-					if metaValue.MetaValues == nil {
-						if fieldStruct := metaValue.Meta.GetFieldStruct(); fieldStruct != nil &&
-							fieldStruct.Relationship != nil && fieldStruct.Relationship.Kind == "belongs_to" {
-							metaID := metaValue.Meta.GetResource().GetMetas([]string{fieldStruct.Relationship.ForeignFieldNames[0]})[0]
-							err = metaID.GetSetter()(record, metaValue, context)
-							return err
+				if utils.ToString(metaValue.Value) != "" {
+					if fieldStruct := metaValue.Meta.GetFieldStruct(); field.Type().Elem().Kind() == reflect.Struct &&
+						metaValue.MetaValues == nil &&
+						fieldStruct != nil &&
+						fieldStruct.Relationship != nil && fieldStruct.Relationship.Kind == "belongs_to" {
+						metaID := metaValue.Parent.Meta.GetResource().GetMetas([]string{fieldStruct.Relationship.ForeignFieldNames[0]})[0]
+						err = metaID.GetSetter()(record, metaValue, context)
+
+						if !field.IsNil() {
+							// set to nil
+							field.Set(reflect.Zero(field.Type()))
 						}
+
+						return err
+					} else {
+						setter(field, metaValue, context, record)
+						return
 					}
-
-					field.Set(utils.NewValue(field.Type()).Elem())
-				}
-
-				if utils.ToString(metaValue.Value) == "" {
+				} else {
 					field.Set(reflect.Zero(field.Type()))
 					return
-				}
-
-				for field.Kind() == reflect.Ptr {
-					field = field.Elem()
 				}
 			}
 
@@ -165,13 +167,16 @@ func setupSetter(meta *Meta, fieldName string, record interface{}) {
 		if _, ok := field.Addr().Interface().(ContextScanner); ok {
 			meta.Setter = commonSetter(func(field reflect.Value, metaValue *MetaValue, context *core.Context, record interface{}) {
 				if scanner, ok := field.Addr().Interface().(ContextScanner); ok {
-					if metaValue.Value == nil && len(metaValue.MetaValues.Values) > 0 {
-						decodeMetaValuesToField(meta.Resource, field, metaValue, context)
-						return
+					var merge bool
+					if metaValue.Value != nil {
+						if err := scanner.ContextScan(context, metaValue.Value); err != nil {
+							context.AddError(err)
+							return
+						}
+						merge = true
 					}
-
-					if err := scanner.ContextScan(context, metaValue.Value); err != nil {
-						context.AddError(err)
+					if metaValue.MetaValues != nil && len(metaValue.MetaValues.Values) > 0 {
+						decodeMetaValuesToField(meta.Resource, field, metaValue, context, merge)
 						return
 					}
 				}
@@ -204,7 +209,13 @@ func setupSetter(meta *Meta, fieldName string, record interface{}) {
 			meta.Setter = commonSetter(func(field reflect.Value, metaValue *MetaValue, context *core.Context, record interface{}) {
 				if str := utils.ToString(metaValue.Value); str != "" {
 					if newTime, err := utils.ParseTime(str, context); err == nil {
-						field.Set(reflect.ValueOf(newTime))
+						if field.Kind() == reflect.Ptr {
+							newValue := reflect.New(field.Type().Elem())
+							newValue.Elem().Set(reflect.ValueOf(newTime))
+							field.Set(newValue)
+						} else {
+							field.Set(reflect.ValueOf(newTime))
+						}
 					}
 				} else {
 					field.Set(reflect.Zero(field.Type()))

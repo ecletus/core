@@ -16,6 +16,7 @@ type MetaScanner interface {
 
 // Metaor interface
 type Metaor interface {
+	core.Permissioner
 	GetName() string
 	GetFieldName() string
 	GetFieldStruct() *aorm.StructField
@@ -27,7 +28,6 @@ type Metaor interface {
 	GetMetas() []Metaor
 	GetContextMetas(recorde interface{}, context *core.Context) []Metaor
 	GetContextResource(context *core.Context) Resourcer
-	HasPermission(roles.PermissionMode, *core.Context) bool
 	IsInline() bool
 }
 
@@ -93,7 +93,6 @@ type Meta struct {
 	Permission       *roles.Permission
 	Help             string
 	HelpLong         string
-	EditName         string
 	SaveID           bool
 	Inline           bool
 }
@@ -187,15 +186,15 @@ func (meta *Meta) SetFormattedValuer(fc func(interface{}, *core.Context) interfa
 }
 
 // HasPermission check has permission or not
-func (meta *Meta) HasPermission(mode roles.PermissionMode, context *core.Context) bool {
+func (meta *Meta) HasPermissionE(mode roles.PermissionMode, context *core.Context) (ok bool, err error) {
 	if meta.Permission == nil {
-		return true
+		return true, roles.ErrDefaultPermission
 	}
-	var roles = []interface{}{}
+	var roles_ = []interface{}{}
 	for _, role := range context.Roles {
-		roles = append(roles, role)
+		roles_ = append(roles_, role)
 	}
-	return meta.Permission.HasPermission(mode, roles...)
+	return roles.HasPermissionDefaultE(true, meta.Permission, mode, roles_...)
 }
 
 // SetPermission set permission for meta
@@ -209,6 +208,10 @@ func (meta *Meta) PreInitialize() error {
 		utils.ExitWithMsg("Meta should have name: %v", reflect.TypeOf(meta))
 	} else if meta.FieldName == "" {
 		meta.FieldName = meta.Name
+	}
+
+	if meta.Name == "RegionID" {
+		println()
 	}
 
 	// parseNestedField used to handle case like Profile.Name

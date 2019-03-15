@@ -8,16 +8,26 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/moisespsena-go/aorm"
-	"github.com/moisespsena/go-route"
-	"github.com/aghape/oss"
-	"github.com/aghape/oss/filesystem"
-	"github.com/aghape/oss/ftp"
+	"github.com/moisespsena-go/aorm/assigners"
+
+	"github.com/moisespsena/go-error-wrap"
+
+	"errors"
+
 	"github.com/aghape/core/config"
 	"github.com/aghape/core/db"
+	"github.com/aghape/oss"
+	"github.com/aghape/oss/filesystem"
+	"github.com/moisespsena-go/aorm"
+	"github.com/moisespsena-go/xroute"
 )
 
 const DB_SYSTEM = "system"
+
+var (
+	StopSiteIteration = errors.New("stop site iteration")
+	StopDBIteration   = errors.New("stop db iteration")
+)
 
 type SitesReaderInterface interface {
 	Get(siteName string) SiteInterface
@@ -25,8 +35,8 @@ type SitesReaderInterface interface {
 	All() []SiteInterface
 	Sorted() []SiteInterface
 	Names() []string
-	EachOrAll(siteName string, cb func(site SiteInterface) (cont bool, err error)) error
-	Each(cb func(site SiteInterface) (cont bool, err error)) error
+	EachOrAll(siteName string, cb func(site SiteInterface) (err error)) error
+	Each(cb func(site SiteInterface) (err error)) error
 }
 
 type SitesReader map[string]SiteInterface
@@ -66,20 +76,19 @@ func (r SitesReader) Sorted() []SiteInterface {
 	return sites
 }
 
-func (r SitesReader) Each(cb func(site SiteInterface) (cont bool, err error)) error {
+func (r SitesReader) Each(cb func(site SiteInterface) (err error)) (err error) {
 	for _, s := range r {
-		cont, err := cb(s)
-		if err != nil {
-			return err
-		}
-		if !cont {
-			return nil
+		if err = cb(s); err != nil {
+			if err == StopSiteIteration {
+				return nil
+			}
+			return errwrap.Wrap(err, "Site %q", s.Name())
 		}
 	}
 	return nil
 }
 
-func (r SitesReader) EachOrAll(siteName string, cb func(site SiteInterface) (cont bool, err error)) error {
+func (r SitesReader) EachOrAll(siteName string, cb func(site SiteInterface) (err error)) error {
 	if siteName == "" || siteName == "*" {
 		return r.Each(cb)
 	}
@@ -90,8 +99,7 @@ func (r SitesReader) EachOrAll(siteName string, cb func(site SiteInterface) (con
 		return err
 	}
 
-	_, err = cb(site)
-	return err
+	return cb(site)
 }
 
 type RawDB struct {
@@ -101,7 +109,10 @@ type RawDB struct {
 }
 
 func (r *RawDB) Open(ctx context.Context) (conn db.RawDBConnection, err error) {
-	return db.SystemRawFactories[r.DB.Config.Adapter](ctx, r.DB.Config)
+	if conn, err = db.SystemRawFactories[r.DB.Config.Adapter](ctx, r.DB.Config); err == nil {
+		err = conn.Open()
+	}
+	return
 }
 
 type RawDBConnectError struct {
@@ -112,7 +123,7 @@ func (r *RawDBConnectError) Error() string {
 	return r.message
 }
 
-func (r *RawDB) With(f func(con db.RawDBConnection)) {
+func (r *RawDB) Do(f func(con db.RawDBConnection)) {
 	r.lock.Lock()
 	defer r.lock.Unlock()
 	if r.conn == nil {
@@ -123,7 +134,7 @@ func (r *RawDB) With(f func(con db.RawDBConnection)) {
 				"open RAW connection of DB %q: %v", r.DB.Site.Name(), r.DB.Name, err)})
 		}
 	}
-	f(r.conn)
+	r.conn.Do(f)
 }
 
 func (r *RawDB) Close() {
@@ -131,7 +142,9 @@ func (r *RawDB) Close() {
 	defer r.lock.Unlock()
 	if r.conn != nil {
 		err := r.conn.Close()
-		if err != nil {
+		if err == nil {
+			r.conn = nil
+		} else {
 			panic(&RawDBConnectError{fmt.Sprintf("github.com/aghape/qor.site: Site %q: Failed to "+
 				"close RAW connection of DB %q: %v", r.DB.Site.Name(), r.DB.Name, err)})
 		}
@@ -139,11 +152,55 @@ func (r *RawDB) Close() {
 }
 
 type DB struct {
-	Site   SiteInterface
-	Config *config.DBConfig
-	Name   string
-	DB     *aorm.DB
-	Raw    *RawDB
+	initCallbacks []func(DB *DB)
+	Site          SiteInterface
+	Config        *config.DBConfig
+	Name          string
+	DB            *aorm.DB
+	Raw           *RawDB
+	open          func() (DB *aorm.DB, err error)
+}
+
+func (db *DB) InitCallback(cb ...func(DB *DB)) {
+	db.initCallbacks = append(db.initCallbacks, cb...)
+	if db.DB != nil {
+		for _, cb := range cb {
+			cb(db)
+		}
+	}
+}
+
+func (db *DB) Open() (err error) {
+	if db.DB != nil {
+		return fmt.Errorf("DB %q for site %q is open", db.Name, db.Site.Name())
+	}
+	db.DB, err = db.open()
+	if err != nil {
+		return errwrap.Wrap(err, "Open DB %q for site %q failed", db.Name, db.Site.Name())
+	}
+	for _, cb := range db.initCallbacks {
+		cb(db)
+	}
+	return
+}
+
+func (db *DB) Close() (err error) {
+	if db.DB != nil {
+		err = db.DB.Close()
+		if err == nil {
+			db.DB = nil
+		} else {
+			err = errwrap.Wrap(err, "Close DB %q for site %q failed", db.Name, db.Site.Name())
+		}
+	}
+	return
+}
+
+func (db *DB) ReOpen() (err error) {
+	if err = db.Close(); err == nil {
+		err = db.Open()
+	}
+	return
 }
 
 func DefaultPrepareRawDBContext(db *DB) context.Context {
@@ -153,20 +210,18 @@ func DefaultPrepareRawDBContext(db *DB) context.Context {
 var PrepareRawDBContext = DefaultPrepareRawDBContext
 
 type SiteInterface interface {
-	route.Handler
+	xroute.Handler
 	Config() *config.SiteConfig
 	AdvancedConfig() config.OtherConfig
-	SetDB(name string, db *aorm.DB)
 	GetDB(name string) *DB
 	GetSystemDB() *DB
-	EachDB(f func(db *DB) bool) bool
-	SetupDB(setup func(db *DB) error) (err error)
+	EachDB(f func(db *DB) (err error)) (err error)
 	StorageNames() *oss.Names
 	SystemStorage() *filesystem.FileSystem
-	MediaStorages() map[string]oss.StorageInterface
-	GetMediaStorage(name string) oss.StorageInterface
-	GetMediaStorageOrDefault(name string) oss.StorageInterface
-	GetDefaultMediaStorage() oss.StorageInterface
+	MediaStorages() map[string]oss.NamedStorageInterface
+	GetMediaStorage(name string) oss.NamedStorageInterface
+	GetMediaStorageOrDefault(name string) oss.NamedStorageInterface
+	GetDefaultMediaStorage() oss.NamedStorageInterface
 	PrepareContext(ctx *Context) *Context
 	Name() string
 	Init() error
@@ -179,10 +234,10 @@ type SiteInterface interface {
 type Site struct {
 	config         *config.SiteConfig
 	dbs            map[string]*DB
-	mediaStorages  map[string]oss.StorageInterface
+	mediaStorages  map[string]oss.NamedStorageInterface
 	systemStorage  *filesystem.FileSystem
 	storageNames   *oss.Names
-	Handler        route.ContextHandler
+	Handler        xroute.ContextHandler
 	contextFactory *ContextFactory
 }
 
@@ -191,10 +246,10 @@ func NewSite(contextFactory *ContextFactory, config *config.SiteConfig) *Site {
 		contextFactory: contextFactory,
 		config:         config,
 		dbs:            make(map[string]*DB),
-		mediaStorages:  make(map[string]oss.StorageInterface),
-		systemStorage:  filesystem.New(config.RootDir),
+		mediaStorages:  make(map[string]oss.NamedStorageInterface),
+		systemStorage:  filesystem.New(&filesystem.Config{RootDir: config.RootDir}),
 		storageNames:   oss.NewNames(),
-		Handler:        route.NewMux(),
+		Handler:        xroute.NewMux(),
 	}
 }
 
@@ -213,33 +268,33 @@ func (s *Site) Name() string {
 }
 
 func (s *Site) Init() (err error) {
-	s.mediaStorages["default"] = s.systemStorage
+	s.mediaStorages["default"] = &oss.NamedStorage{s.systemStorage, "default"}
 
 	for name, storageConfig := range s.config.MediaStorage {
-		if storageConfig.Ftp != nil {
-			s.mediaStorages[name], err = ftp.New(*storageConfig.Ftp)
-			if err != nil {
-				return fmt.Errorf("Configure FTP media storage %q fail: %v", name, err)
-			}
-		} else {
-			if storageConfig.RootDir == s.systemStorage.Base {
-				s.mediaStorages[name] = s.systemStorage
-			} else {
-				s.mediaStorages[name] = filesystem.New(storageConfig.RootDir)
-			}
-		}
+		s.mediaStorages[name] = &oss.NamedStorage{storageConfig["@storage"].(oss.StorageInterface), name}
 	}
 
-	var db_ *aorm.DB
-
 	for name, dbConfig := range s.config.Db {
-		db_, err = db.SystemFactories.Factory(dbConfig)
-		if err != nil {
-			return fmt.Errorf("Init DB %q fail: %v", name, err)
-		}
-		d := &DB{s, dbConfig, name, db_.Inside(PREFIX+".site["+s.Name()+"]", "DB["+name+"]").Set(PREFIX+".site", s), nil}
-		d.Raw = &RawDB{DB: d}
-		s.dbs[name] = d
+		func(dbConfig *config.DBConfig) {
+			var d *DB
+			d = &DB{
+				Site:   s,
+				Config: dbConfig,
+				Name:   name,
+				open: func() (DB *aorm.DB, err error) {
+					if DB, err = db.SystemFactories.Factory(dbConfig); err == nil {
+						DB = assigners.Assigners().ApplyToDB(DB)
+						DB = DB.Inside(PREFIX+".site["+s.Name()+"]", "DB["+name+"]").Set(PREFIX+".site", s).Set(PREFIX+".db", d)
+					}
+					return
+				},
+			}
+			if err := d.Open(); err != nil {
+				panic(err)
+			}
+			d.Raw = &RawDB{DB: d}
+			s.dbs[name] = d
+		}(dbConfig)
 	}
 
 	return
@@ -257,10 +312,6 @@ func (site *Site) StorageNames() *oss.Names {
 	return site.storageNames
 }
 
-func (site *Site) SetDB(name string, db *aorm.DB) {
-	site.dbs[name] = &DB{site, nil, name, db.Set(PREFIX+".site", site), nil}
-}
-
 func (site *Site) GetDB(name string) *DB {
 	return site.dbs[name]
 }
@@ -269,28 +320,31 @@ func (site *Site) GetSystemDB() *DB {
 	return site.GetDB(DB_SYSTEM)
 }
 
-func (site *Site) EachDB(f func(db *DB) bool) bool {
+func (site *Site) EachDB(f func(db *DB) error) (err error) {
 	for _, db := range site.dbs {
-		if !f(db) {
-			return false
+		if err = f(db); err != nil {
+			if err == StopDBIteration {
+				return nil
+			}
+			return
 		}
 	}
-	return true
+	return
 }
 
 func (site *Site) SystemStorage() *filesystem.FileSystem {
 	return site.systemStorage
 }
 
-func (site *Site) MediaStorages() map[string]oss.StorageInterface {
+func (site *Site) MediaStorages() map[string]oss.NamedStorageInterface {
 	return site.mediaStorages
 }
 
-func (site *Site) GetMediaStorage(name string) oss.StorageInterface {
+func (site *Site) GetMediaStorage(name string) oss.NamedStorageInterface {
 	return site.mediaStorages[name]
 }
 
-func (site *Site) GetMediaStorageOrDefault(name string) oss.StorageInterface {
+func (site *Site) GetMediaStorageOrDefault(name string) oss.NamedStorageInterface {
 	s := site.GetMediaStorage(name)
 	if s == nil {
 		return site.GetDefaultMediaStorage()
@@ -298,7 +352,7 @@ func (site *Site) GetMediaStorageOrDefault(name string) oss.StorageInterface {
 	return s
 }
 
-func (site *Site) GetDefaultMediaStorage() oss.StorageInterface {
+func (site *Site) GetDefaultMediaStorage() oss.NamedStorageInterface {
 	return site.GetMediaStorage("default")
 }
 
@@ -307,33 +361,28 @@ func (site *Site) PrepareContext(context *Context) *Context {
 	context.Site = site
 	DB := site.GetSystemDB().DB
 	if context.Request != nil {
-		DB = DB.Inside("Req["+context.Request.Method+" "+context.Request.RequestURI+"]")
+		DB = DB.Inside("Req[" + context.Request.Method + " " + context.Request.RequestURI + "]")
 	}
 	context.SetDB(DB.Set(CONTEXT_KEY, context))
 	if context.RouteContext == nil {
-		context.RouteContext = route.NewRouteContext()
+		context.RouteContext = xroute.NewRouteContext()
 	}
 	return context
 }
 
-func (site *Site) SetupDB(setup func(db *DB) error) (err error) {
-	site.EachDB(func(db *DB) bool {
-		err = setup(db)
-		if err != nil {
-			return false
-		}
-		return true
-	})
-	return
-}
-
-func (site *Site) ServeHTTPContext(w http.ResponseWriter, r *http.Request, rctx *route.RouteContext) {
+func (site *Site) ServeHTTPContext(w http.ResponseWriter, r *http.Request, rctx *xroute.RouteContext) {
 	prefix, r := site.contextFactory.GetCleanSkipPrefixFromRequest(r)
+	if strings.HasPrefix(r.URL.Path, PATH_MEDIA) {
+		r.URL.Path = strings.TrimPrefix(r.URL.Path, PATH_MEDIA)
+		storage := site.GetDefaultMediaStorage()
+		storage.ServeHTTP(w, r)
+		return
+	}
 	r, context := site.contextFactory.NewContextFromRequestPair(w, r, prefix)
 	context.StaticURL += "/static"
 	site.PrepareContext(context)
 	rctx.Data[CONTEXT_KEY] = context
-	rctx.ChainRequestSetters[CONTEXT_KEY] = route.NewChainRequestSetter(func(chain *route.ChainHandler, r *http.Request) {
+	rctx.ChainRequestSetters[CONTEXT_KEY] = xroute.NewChainRequestSetter(func(chain *xroute.ChainHandler, r *http.Request) {
 		chain.Context.Data[CONTEXT_KEY].(*Context).SetRequest(r)
 	})
 	site.Handler.ServeHTTPContext(w, r, rctx)
@@ -373,4 +422,9 @@ func GetSiteFromDB(db *aorm.DB) SiteInterface {
 
 func GetSiteFromRequest(r *http.Request) SiteInterface {
 	return ContextFromRequest(r).Site
+}
+
+func GetDBFromDB(db *aorm.DB) *DB {
+	s, _ := db.Get(PREFIX + ".db")
+	return s.(*DB)
 }
