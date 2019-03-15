@@ -12,7 +12,7 @@ import (
 	"sync"
 	"time"
 
-	qorconfig "github.com/aghape/core/config"
+	qorconfig "github.com/ecletus/core/config"
 	"github.com/moisespsena-go/aorm"
 	_ "github.com/moisespsena-go/aorm/dialects/mysql"
 	_ "github.com/moisespsena-go/aorm/dialects/postgres"

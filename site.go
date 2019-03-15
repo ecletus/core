@@ -14,10 +14,10 @@ import (
 
 	"errors"
 
-	"github.com/aghape/core/config"
-	"github.com/aghape/core/db"
-	"github.com/aghape/oss"
-	"github.com/aghape/oss/filesystem"
+	"github.com/ecletus/core/config"
+	"github.com/ecletus/core/db"
+	"github.com/ecletus/oss"
+	"github.com/ecletus/oss/filesystem"
 	"github.com/moisespsena-go/aorm"
 	"github.com/moisespsena-go/xroute"
 )
@@ -130,7 +130,7 @@ func (r *RawDB) Do(f func(con db.RawDBConnection)) {
 		var err error
 		r.conn, err = r.Open(PrepareRawDBContext(r.DB))
 		if err != nil {
-			panic(&RawDBConnectError{fmt.Sprintf("github.com/aghape/qor.site: Site %q: Failed to "+
+			panic(&RawDBConnectError{fmt.Sprintf("github.com/ecletus/qor.site: Site %q: Failed to "+
 				"open RAW connection of DB %q: %v", r.DB.Site.Name(), r.DB.Name, err)})
 		}
 	}
@@ -145,7 +145,7 @@ func (r *RawDB) Close() {
 		if err == nil {
 			r.conn = nil
 		} else {
-			panic(&RawDBConnectError{fmt.Sprintf("github.com/aghape/qor.site: Site %q: Failed to "+
+			panic(&RawDBConnectError{fmt.Sprintf("github.com/ecletus/qor.site: Site %q: Failed to "+
 				"close RAW connection of DB %q: %v", r.DB.Site.Name(), r.DB.Name, err)})
 		}
 	}

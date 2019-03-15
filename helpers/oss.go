@@ -3,16 +3,16 @@ package helpers
 import (
 	"strings"
 
-	"github.com/aghape/oss"
+	"github.com/ecletus/oss"
 
-	"github.com/aghape/core"
-	"github.com/aghape/core/utils"
+	"github.com/ecletus/core"
+	"github.com/ecletus/core/utils"
 )
 
 func GetStorageEndpointSchemeHostFromContext(ctx *core.Context, storageName string) (scheme, host string) {
 	siteName := strings.Replace(utils.HumanizeString(ctx.Site.Name()), " ", "-", -1)
 	storageName = strings.Replace(utils.HumanizeString(storageName), " ", "-", -1)
-	key := "X-Aghape-Oss-Storage-Endpoint-" + siteName + "-" + storageName + "-Host"
+	key := "X-Ecletus-Oss-Storage-Endpoint-" + siteName + "-" + storageName + "-Host"
 	host = ctx.Request.Header.Get(key)
 	if host != "" {
 		scheme = ctx.Request.Header.Get("X-Forwarded-Proto")

@@ -1,7 +1,7 @@
 package core
 
 import (
-	"github.com/aghape/session"
+	"github.com/ecletus/session"
 )
 
 const sessionManagerKey = "qor:session_manager"

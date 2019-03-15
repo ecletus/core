@@ -1,6 +1,6 @@
 package resource
 
-import "github.com/aghape/core"
+import "github.com/ecletus/core"
 
 // ContextScanner interface
 // Allow to scan value with reflect.StructField arg

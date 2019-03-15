@@ -1,7 +1,7 @@
 package db
 
 import (
-	qorconfig "github.com/aghape/core/config"
+	qorconfig "github.com/ecletus/core/config"
 	"github.com/moisespsena-go/aorm"
 )
 

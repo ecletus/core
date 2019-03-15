@@ -6,7 +6,7 @@ import (
 
 	"github.com/gorilla/securecookie"
 	"github.com/gorilla/sessions"
-	"github.com/aghape/core/contextdata"
+	"github.com/ecletus/core/contextdata"
 )
 
 type CookiStoreFactory func(context *Context, options *sessions.Options, codecs *CookieCodec) *sessions.CookieStore

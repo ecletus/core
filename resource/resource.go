@@ -9,10 +9,10 @@ import (
 
 	"github.com/moisespsena/go-path-helpers"
 
-	"github.com/aghape/core"
-	"github.com/aghape/core/config"
-	"github.com/aghape/core/utils"
-	"github.com/aghape/roles"
+	"github.com/ecletus/core"
+	"github.com/ecletus/core/config"
+	"github.com/ecletus/core/utils"
+	"github.com/ecletus/roles"
 	"github.com/jinzhu/inflection"
 	"github.com/moisespsena-go/aorm"
 	"github.com/moisespsena/go-edis"

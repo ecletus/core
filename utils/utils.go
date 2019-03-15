@@ -16,8 +16,8 @@ import (
 
 	"go4.org/sort"
 
-	"github.com/aghape/core"
-	"github.com/aghape/helpers"
+	"github.com/ecletus/core"
+	"github.com/ecletus/helpers"
 	"github.com/gosimple/slug"
 	"github.com/jinzhu/now"
 	"github.com/microcosm-cc/bluemonday"

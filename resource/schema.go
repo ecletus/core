@@ -10,8 +10,8 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/aghape/core"
-	"github.com/aghape/core/utils"
+	"github.com/ecletus/core"
+	"github.com/ecletus/core/utils"
 )
 
 func convertMapToMetaValues(values map[string]interface{}, metaors []Metaor) (*MetaValues, error) {

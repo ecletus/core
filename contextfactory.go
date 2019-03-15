@@ -4,7 +4,7 @@ import (
 	"context"
 	"net/http"
 
-	"github.com/aghape/core/config"
+	"github.com/ecletus/core/config"
 	"github.com/moisespsena-go/xroute"
 	"github.com/moisespsena/go-i18n-modular/i18nmod"
 )

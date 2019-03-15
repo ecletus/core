@@ -41,7 +41,7 @@ function update_git_repo {
     fi
 }
 
-update_git_repo $GOPATH/src/github.com/aghape
+update_git_repo $GOPATH/src/github.com/ecletus
 
 wait
 

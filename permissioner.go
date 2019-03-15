@@ -1,6 +1,6 @@
 package core
 
-import "github.com/aghape/roles"
+import "github.com/ecletus/roles"
 
 type Permissioner interface {
 	HasPermissionE(mode roles.PermissionMode, ctx *Context) (ok bool, err error)

@@ -6,10 +6,10 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/aghape/core.git"
+    "url": "https://github.com/ecletus/core.git"
   },
   "keywords": [
-    "aghape",
+    "ecletus",
     "cms",
     "go"
   ],

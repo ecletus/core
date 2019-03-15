@@ -3,7 +3,7 @@ package resource
 import (
 	"reflect"
 
-	"github.com/aghape/core"
+	"github.com/ecletus/core"
 )
 
 // MetaValues is slice of MetaValue

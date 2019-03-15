@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"reflect"
 
-	"github.com/aghape/core"
-	"github.com/aghape/roles"
+	"github.com/ecletus/core"
+	"github.com/ecletus/roles"
 	"github.com/moisespsena-go/aorm"
 	"github.com/moisespsena/go-edis"
 	"github.com/moisespsena/go-error-wrap"

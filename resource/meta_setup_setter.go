@@ -8,9 +8,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/aghape/core"
-	"github.com/aghape/core/utils"
-	"github.com/aghape/validations"
+	"github.com/ecletus/core"
+	"github.com/ecletus/core/utils"
+	"github.com/ecletus/validations"
 )
 
 func setupSetter(meta *Meta, fieldName string, record interface{}) {

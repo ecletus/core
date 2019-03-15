@@ -6,7 +6,7 @@ import (
 	"os"
 	"os/exec"
 
-	"github.com/aghape/core/config"
+	"github.com/ecletus/core/config"
 )
 
 func PostgreSQLRawFactory(ctx context.Context, config *config.DBConfig) (db RawDBConnection, err error) {

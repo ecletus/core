@@ -2,8 +2,8 @@ package plugins
 
 import (
 	"github.com/moisespsena/go-i18n-modular/i18nmod"
-	"github.com/aghape/plug"
-	"github.com/aghape/core"
+	"github.com/ecletus/plug"
+	"github.com/ecletus/core"
 )
 
 type ContextFactoryPlugin struct {

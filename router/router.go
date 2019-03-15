@@ -7,7 +7,7 @@ import (
 	"reflect"
 	"strings"
 
-	"github.com/aghape/core"
+	"github.com/ecletus/core"
 )
 
 type Container struct {
