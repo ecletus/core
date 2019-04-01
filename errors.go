@@ -5,7 +5,7 @@ import (
 	"reflect"
 	"strings"
 
-	"github.com/moisespsena/go-error-wrap"
+	"github.com/moisespsena-go/error-wrap"
 )
 
 // Errors is a struct that used to hold errors array

@@ -9,7 +9,7 @@ import (
 	"github.com/ecletus/roles"
 	"github.com/moisespsena-go/aorm"
 	"github.com/moisespsena/go-edis"
-	"github.com/moisespsena/go-error-wrap"
+	"github.com/moisespsena-go/error-wrap"
 )
 
 type CRUD struct {
