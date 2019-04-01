@@ -23,19 +23,15 @@ func (cf *ContextFactory) NewContextForRequest(req *http.Request, prefix ...stri
 
 	var ctx *Context
 
-	URL := xroute.GetOriginalURL(req)
-	if URL == nil {
-		urlCopy := *req.URL
-		URL = &urlCopy
-	}
+	URL := *req.URL
+	URL.Path = req.RequestURI
 
 	if parent == nil {
 		ctx = &Context{
 			ContextFactory: cf,
 			Config:         config.NewConfig(),
 			Request:        req,
-			OriginalURL:    URL,
-			Prefix:         stringOrDefault(rctx.Value("PREFIX")),
+			OriginalURL:    &URL,
 			StaticURL:      stringOrDefault(rctx.Value("STATIC_URL")),
 			Translator:     cf.Translator,
 			DefaultLocale:  cf.Translator.DefaultLocale,
@@ -68,22 +64,4 @@ func (cf *ContextFactory) GetOrNewContextFromRequestPair(w http.ResponseWriter, 
 		r, ctx = cf.NewContextFromRequestPair(w, r)
 	}
 	return r, ctx
-}
-
-func (cf *ContextFactory) GetCleanSkipPrefixFromRequest(r *http.Request) (string, *http.Request) {
-	if v, ok := r.Context().Value(PREFIX + ".skip_prefix").(string); ok && v != "" {
-		r = cf.SetSkipPrefixToRequest(r, "")
-		return v, r
-	}
-	return "", r
-}
-
-func (cf *ContextFactory) SetSkipPrefixToRequest(r *http.Request, prefix string) *http.Request {
-	return r.WithContext(context.WithValue(r.Context(), PREFIX+".skip_prefix", prefix))
-}
-
-func (cf *ContextFactory) NewContextFromChain(chain *xroute.ChainHandler) (*http.Request, *Context) {
-	prefix, r := cf.GetCleanSkipPrefixFromRequest(chain.Request())
-	chain.SetRequest(r)
-	return cf.NewContextFromRequestPair(chain.Writer, chain.Request(), prefix)
 }

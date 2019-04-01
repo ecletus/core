@@ -133,7 +133,7 @@ func ConvertFormDataToMetaValues(context *core.Context, form url.Values, multipa
 					if parent != nil {
 						hasParent = true
 					} else {
-						parent = &MetaValue{Name: matches[2], Meta: metaor}
+						parent = &MetaValue{Name: matches[2], Meta: metaor, Parent:root[0]}
 					}
 
 					if children, err := ConvertFormDataToMetaValues(context, form, multipartForm, metaors, prefix+name+".", parent); err == nil {

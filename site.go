@@ -10,7 +10,7 @@ import (
 
 	"github.com/moisespsena-go/aorm/assigners"
 
-	"github.com/moisespsena/go-error-wrap"
+	"github.com/moisespsena-go/error-wrap"
 
 	"errors"
 
@@ -19,6 +19,7 @@ import (
 	"github.com/ecletus/oss"
 	"github.com/ecletus/oss/filesystem"
 	"github.com/moisespsena-go/aorm"
+	"github.com/moisespsena-go/httpu"
 	"github.com/moisespsena-go/xroute"
 )
 
@@ -371,13 +372,13 @@ func (site *Site) PrepareContext(context *Context) *Context {
 }
 
 func (site *Site) ServeHTTPContext(w http.ResponseWriter, r *http.Request, rctx *xroute.RouteContext) {
-	prefix, r := site.contextFactory.GetCleanSkipPrefixFromRequest(r)
 	if strings.HasPrefix(r.URL.Path, PATH_MEDIA) {
 		r.URL.Path = strings.TrimPrefix(r.URL.Path, PATH_MEDIA)
 		storage := site.GetDefaultMediaStorage()
 		storage.ServeHTTP(w, r)
 		return
 	}
+	prefix := httpu.PrefixR(r)
 	r, context := site.contextFactory.NewContextFromRequestPair(w, r, prefix)
 	context.StaticURL += "/static"
 	site.PrepareContext(context)

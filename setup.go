@@ -19,7 +19,6 @@ type SetupOptions struct {
 	Home               string
 	Root               string
 	TempDir            string
-	Prefix             string
 	Production         bool
 	CookieStoreFactory CookiStoreFactory
 	CookieMaxAge       int
@@ -30,7 +29,6 @@ type SetupConfig struct {
 	home               string
 	root               string
 	tempDir            string
-	prefix             string
 	production         bool
 	cookieStoreFactory CookiStoreFactory
 	cookieMaxAge       int
@@ -56,10 +54,6 @@ func (c *SetupConfig) Root() string {
 func (c *SetupConfig) TempDir() string {
 	return c.tempDir
 }
-
-func (c *SetupConfig) Prefix() string {
-	return c.prefix
-}
 func (c *SetupConfig) CookieStoreFactory() CookiStoreFactory {
 	return c.cookieStoreFactory
 }
@@ -80,7 +74,7 @@ func Setup(options SetupOptions) *SetupConfig {
 		options.Home = os.Getenv("HOME")
 	}
 
-	setupConfig := &SetupConfig{options.Home, options.Root, options.TempDir, options.Prefix,
+	setupConfig := &SetupConfig{options.Home, options.Root, options.TempDir,
 		options.Production, options.CookieStoreFactory, options.CookieMaxAge,
 		options.CookieCodecs}
 

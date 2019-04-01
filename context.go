@@ -8,8 +8,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/moisespsena/go-default-logger"
+	defaultlogger "github.com/moisespsena/go-default-logger"
 	"github.com/op/go-logging"
+
+	"path"
 
 	"github.com/ecletus/common"
 	"github.com/ecletus/core/config"
@@ -74,6 +76,15 @@ type Context struct {
 
 	logger     *logging.Logger
 	RedirectTo string
+}
+
+func (context *Context) HasRole(role string) bool {
+	for _, r := range context.Roles {
+		if r == role {
+			return true
+		}
+	}
+	return false
 }
 
 func (context *Context) Read(p []byte) (n int, err error) {
@@ -394,25 +405,30 @@ func (context *Context) Root() *Context {
 }
 
 func (context *Context) NewChild(r *http.Request, prefix ...string) (*http.Request, *Context) {
-	var path string
-	if len(prefix) > 0 && prefix[0] != "" {
-		path = "/" + strings.Trim(prefix[0], "/")
+	var pth string
+	if len(prefix) > 0 {
+		pth = prefix[0]
 	}
-
+	if pth == "/" {
+		pth = ""
+	}
 	child := context.Clone()
 	child.isTop = false
 	child.Parent = context
 
-	if path != "" {
-		child.StaticURL += path
-		child.Prefix += path
+	if pth != "" {
+		child.StaticURL = path.Join(child.StaticURL, pth)
+		child.Prefix = path.Join(child.Prefix, pth)
 		if r == nil {
 			r = context.Request
 		}
 		if r != nil {
 			nurl := *r.URL
 			nurl2 := &nurl
-			nurl2.Path = strings.TrimPrefix(r.URL.Path, path)
+			nurl2.Path = strings.TrimPrefix(r.URL.Path, pth)
+			if nurl2.Path == "" || nurl2.Path[0] != '/' {
+				nurl2.Path = "/" + nurl2.Path
+			}
 			var err error
 			r.URL, err = url.Parse(nurl2.String())
 			if err != nil {
