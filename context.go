@@ -8,7 +8,7 @@ import (
 	"strings"
 	"time"
 
-	defaultlogger "github.com/moisespsena/go-default-logger"
+	defaultlogger "github.com/moisespsena-go/default-logger"
 	"github.com/op/go-logging"
 
 	"path"

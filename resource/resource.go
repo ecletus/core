@@ -7,7 +7,7 @@ import (
 	"reflect"
 	"strings"
 
-	"github.com/moisespsena/go-path-helpers"
+	"github.com/moisespsena-go/path-helpers"
 
 	"github.com/ecletus/core"
 	"github.com/ecletus/core/config"

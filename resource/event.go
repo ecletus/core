@@ -4,7 +4,7 @@ import (
 	"github.com/ecletus/core"
 	"github.com/moisespsena-go/aorm"
 	"github.com/moisespsena/go-edis"
-	"github.com/moisespsena/go-path-helpers"
+	"github.com/moisespsena-go/path-helpers"
 )
 
 var pkg = path_helpers.GetCalledDir()
