@@ -6,7 +6,7 @@ import (
 
 	"github.com/ecletus/core/config"
 	"github.com/moisespsena-go/xroute"
-	"github.com/moisespsena/go-i18n-modular/i18nmod"
+	"github.com/moisespsena-go/i18n-modular/i18nmod"
 )
 
 type ContextFactory struct {

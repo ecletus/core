@@ -3,7 +3,7 @@ package plugins
 import (
 	"github.com/ecletus-pkg/locale"
 	"github.com/ecletus/plug"
-	"github.com/moisespsena/go-i18n-modular/i18nmod"
+	"github.com/moisespsena-go/i18n-modular/i18nmod"
 	"github.com/op/go-logging"
 )
 

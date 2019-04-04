@@ -1,7 +1,7 @@
 package plugins
 
 import (
-	"github.com/moisespsena/go-i18n-modular/i18nmod"
+	"github.com/moisespsena-go/i18n-modular/i18nmod"
 	"github.com/ecletus/plug"
 	"github.com/ecletus/core"
 )

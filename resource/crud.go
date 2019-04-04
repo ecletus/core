@@ -8,7 +8,7 @@ import (
 	"github.com/ecletus/core"
 	"github.com/ecletus/roles"
 	"github.com/moisespsena-go/aorm"
-	"github.com/moisespsena/go-edis"
+	"github.com/moisespsena-go/edis"
 	"github.com/moisespsena-go/error-wrap"
 )
 

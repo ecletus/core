@@ -20,7 +20,7 @@ import (
 	uurl "github.com/ecletus/core/utils/url"
 	"github.com/moisespsena-go/aorm"
 	"github.com/moisespsena-go/xroute"
-	"github.com/moisespsena/go-i18n-modular/i18nmod"
+	"github.com/moisespsena-go/i18n-modular/i18nmod"
 	"github.com/moisespsena/template/html/template"
 )
 

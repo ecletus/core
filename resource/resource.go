@@ -15,8 +15,8 @@ import (
 	"github.com/ecletus/roles"
 	"github.com/jinzhu/inflection"
 	"github.com/moisespsena-go/aorm"
-	"github.com/moisespsena/go-edis"
-	"github.com/moisespsena/go-i18n-modular/i18nmod"
+	"github.com/moisespsena-go/edis"
+	"github.com/moisespsena-go/i18n-modular/i18nmod"
 )
 
 const DEFAULT_LAYOUT = "default"

@@ -8,7 +8,7 @@ import (
 	"github.com/ecletus/oss"
 	"github.com/ecletus/oss/factories"
 	"github.com/moisespsena-go/stringvar"
-	"github.com/moisespsena/go-assetfs"
+	"github.com/moisespsena-go/assetfs"
 	"github.com/moisespsena-go/error-wrap"
 )
 
