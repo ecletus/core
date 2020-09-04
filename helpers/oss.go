@@ -1,6 +1,7 @@
 package helpers
 
 import (
+	"github.com/moisespsena-go/httpu"
 	"strings"
 
 	"github.com/ecletus/oss"
@@ -15,18 +16,7 @@ func GetStorageEndpointSchemeHostFromContext(ctx *core.Context, storageName stri
 	key := "X-Ecletus-Oss-Storage-Endpoint-" + siteName + "-" + storageName + "-Host"
 	host = ctx.Request.Header.Get(key)
 	if host != "" {
-		scheme = ctx.Request.Header.Get("X-Forwarded-Proto")
-		if scheme == "" {
-			if ctx.Request.TLS != nil {
-				scheme = "https"
-			} else {
-				scheme = "http"
-			}
-		} else if scheme[len(scheme)-1] == 's' {
-			scheme = "https"
-		} else {
-			scheme = "http"
-		}
+		scheme = httpu.HttpScheme(ctx.Request)
 	}
 	return
 }
@@ -38,7 +28,7 @@ func GetStorageEndpointFromContext(ctx *core.Context, storage oss.NamedStorageIn
 		url = storage.GetURL(p...)
 	}
 	if url != "" && url[0] == '!' {
-		url = ctx.Top().GenURL(core.PATH_MEDIA, url[1:])
+		url = ctx.Top().Path(core.PATH_MEDIA, url[1:])
 	}
 	return
 }

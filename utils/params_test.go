@@ -17,7 +17,7 @@ func TestParamsMatch(t *testing.T) {
 
 	checkers := []paramMatchChecker{
 		{Source: "", Path: "/", MatchedPath: "/", Results: url.Values{}, Matched: true},
-		{Source: "/admin/micro_sites/:id/!preview/", Path: "/admin/micro_sites/1/!preview/index.html", MatchedPath: "/admin/micro_sites/1/!preview/", Results: url.Values{":id": []string{"1"}, ":format": []string{"html"}}, Matched: true},
+		{Source: "/admin/micro_sites/:id/!preview/", Path: "/admin/micro_sites/1/!preview/index.tmpl", MatchedPath: "/admin/micro_sites/1/!preview/", Results: url.Values{":id": []string{"1"}, ":format": []string{"html"}}, Matched: true},
 		{Source: "/hello/:name", Path: "/hello/world", MatchedPath: "/hello/world", Results: url.Values{":name": []string{"world"}}, Matched: true},
 		{Source: "/hello/:name", Path: "/hello/world.csv", MatchedPath: "/hello/world", Results: url.Values{":name": []string{"world"}, ":format": []string{"csv"}}, Matched: true},
 		{Source: "/hello/:name", Path: "/hello/world/.csv", MatchedPath: "/hello/world", Results: url.Values{":name": []string{"world"}, ":format": []string{"csv"}}, Matched: false},

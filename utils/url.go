@@ -1,9 +1,6 @@
 package utils
 
 type URLGenerator interface {
-	GenStaticURL(path... string) string
-	GenURL(path... string) string
-	GenGlobalStaticURL(path... string) string
-	GenGlobalURL(path... string) string
+	JoinStaticURL(path ...string) string
+	JoinPath(path ...string) string
 }
-

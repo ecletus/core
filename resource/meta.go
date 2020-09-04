@@ -1,50 +1,19 @@
 package resource
 
 import (
+	"fmt"
 	"reflect"
 	"strings"
 
-	"github.com/ecletus/core"
+	"github.com/moisespsena-go/maps"
+
 	"github.com/ecletus/core/utils"
+
 	"github.com/ecletus/roles"
+
+	"github.com/ecletus/core"
 	"github.com/moisespsena-go/aorm"
 )
-
-type MetaScanner interface {
-	MetaScan(value interface{}) error
-}
-
-// Metaor interface
-type Metaor interface {
-	core.Permissioner
-	GetName() string
-	GetFieldName() string
-	GetFieldStruct() *aorm.StructField
-	GetSetter() func(resource interface{}, metaValue *MetaValue, context *core.Context) error
-	GetFormattedValuer() func(recorde interface{}, context *core.Context) interface{}
-	GetValuer() func(recorde interface{}, context *core.Context) interface{}
-	GetContextResourcer() func(meta Metaor, context *core.Context) Resourcer
-	GetResource() Resourcer
-	GetMetas() []Metaor
-	GetContextMetas(recorde interface{}, context *core.Context) []Metaor
-	GetContextResource(context *core.Context) Resourcer
-	IsInline() bool
-}
-
-// ConfigureMetaBeforeInitializeInterface if a struct's field's type implemented this interface, it will be called when initializing a meta
-type ConfigureMetaBeforeInitializeInterface interface {
-	ConfigureQorMetaBeforeInitialize(Metaor)
-}
-
-// ConfigureMetaInterface if a struct's field's type implemented this interface, it will be called after configed
-type ConfigureMetaInterface interface {
-	ConfigureQorMeta(Metaor)
-}
-
-// MetaConfigInterface meta configuration interface
-type MetaConfigInterface interface {
-	ConfigureMetaInterface
-}
 
 // MetaConfig base meta config struct
 type MetaConfig struct {
@@ -77,188 +46,243 @@ func (meta *MetaName) GetEncodedNameOrDefault() string {
 	return meta.Name
 }
 
+type FContextResourcer = func(meta Metaor, context *core.Context) Resourcer
+type FSetter = func(resource interface{}, metaValue *MetaValue, context *core.Context) error
+type FValuer = func(interface{}, *core.Context) interface{}
+type FFormattedValuer = func(interface{}, *core.Context) interface{}
+
 // Meta meta struct definition
 type Meta struct {
 	*MetaName
-	Alias            *MetaName
-	FieldName        string
-	FieldStruct      *aorm.StructField
-	ContextResourcer func(meta Metaor, context *core.Context) Resourcer
-	Setter           func(resource interface{}, metaValue *MetaValue, context *core.Context) error
-	Valuer           func(interface{}, *core.Context) interface{}
-	FormattedValuer  func(interface{}, *core.Context) interface{}
-	Config           MetaConfigInterface
-	BaseResource     Resourcer
-	Resource         Resourcer
-	Permission       *roles.Permission
-	Help             string
-	HelpLong         string
-	SaveID           bool
-	Inline           bool
+	Alias                 *MetaName
+	FieldName             string
+	FieldStruct           *aorm.StructField
+	ContextResourcer      FContextResourcer
+	Setter                FSetter
+	Valuer                FValuer
+	FormattedValuer       FFormattedValuer
+	Config                MetaConfigInterface
+	BaseResource          Resourcer
+	Resource              Resourcer
+	Permission            *roles.Permission
+	Help                  string
+	HelpLong                   string
+	SaveID                     bool
+	Inline                     bool
+	Required                   bool
+	Icon                       bool
+	validators                 []func(record interface{}, values *MetaValue, ctx *core.Context) (err error)
+	Data                       maps.SyncedMap
+	Typ                        reflect.Type
+	UIValidatorFunc            func(ctx *core.Context, recorde interface{}) string
+	LoadRelatedBeforeSave      bool
+	DisableSiblingsRequirement bool
 }
 
-func (meta *Meta) Namer() *MetaName {
-	if meta.Alias != nil {
-		return meta.Alias
+func (this *Meta) Proxier() bool {
+	return false
+}
+
+func (this *Meta) IsAlone() bool {
+	return false
+}
+
+func (this *Meta) IsSiblingsRequirementCheckDisabled() bool {
+	return this.DisableSiblingsRequirement
+}
+
+func (this *Meta) UIValidator(ctx *core.Context, recorde interface{}) string {
+	if this.UIValidatorFunc != nil {
+		return this.UIValidatorFunc(ctx, recorde)
 	}
-	return meta.MetaName
+	return ""
 }
 
-func (meta *Meta) IsInline() bool {
-	return meta.Inline
+func (this *Meta) Validators() []func(record interface{}, values *MetaValue, ctx *core.Context) (err error) {
+	return this.validators
+}
+
+func (this *Meta) RecordValidator(f ...func(record interface{}, ctx *core.Context) (err error)) *Meta {
+	this.BaseResource.GetResource().AddProcessor(func(i interface{}, _ *MetaValues, context *core.Context) (err error) {
+		for _, f := range f {
+			if err = f(i, context); err != nil {
+				return
+			}
+		}
+		return
+	})
+	return this
+}
+
+func (this *Meta) Validator(f ...func(record interface{}, values *MetaValue, ctx *core.Context) (err error)) *Meta {
+	this.validators = append(this.validators, f...)
+	return this
+}
+
+func (this *Meta) IsZero(recorde, value interface{}) bool {
+	return value == nil
+}
+
+func (this *Meta) GetLabelC(ctx *core.Context) string {
+	return utils.HumanizeString(this.MetaName.Name)
+}
+
+func (this *Meta) GetRecordLabelC(ctx *core.Context, record interface{}) string {
+	return utils.HumanizeString(this.MetaName.Name)
+}
+
+func (this *Meta) Namer() *MetaName {
+	if this.Alias != nil {
+		return this.Alias
+	}
+	return this.MetaName
+}
+
+func (this *Meta) IsInline() bool {
+	return this.Inline
+}
+
+func (this *Meta) IsRequired() bool {
+	return this.Required
 }
 
 // GetBaseResource get base resource from meta
-func (meta *Meta) GetBaseResource() Resourcer {
-	return meta.BaseResource
+func (this *Meta) GetBaseResource() Resourcer {
+	return this.BaseResource
 }
 
 // GetFieldStruct get aorm field struct
-func (meta *Meta) GetFieldStruct() *aorm.StructField {
-	return meta.FieldStruct
+func (this *Meta) GetFieldStruct() *aorm.StructField {
+	return this.FieldStruct
 }
 
 // GetContextResource get resource from meta
-func (meta *Meta) GetContextResourcer() func(meta Metaor, context *core.Context) Resourcer {
-	return meta.ContextResourcer
+func (this *Meta) GetContextResourcer() func(meta Metaor, context *core.Context) Resourcer {
+	return this.ContextResourcer
 }
 
-func (meta *Meta) GetContextResource(context *core.Context) Resourcer {
-	if meta.ContextResourcer != nil {
-		return meta.ContextResourcer(meta, context)
+func (this *Meta) GetContextResource(context *core.Context) Resourcer {
+	if this.ContextResourcer != nil {
+		return this.ContextResourcer(this, context)
 	}
-	return meta.Resource
+	return this.Resource
 }
 
-func (meta *Meta) GetContextMetas(recort interface{}, context *core.Context) (metas []Metaor) {
-	return meta.GetContextResource(context).GetMetas([]string{})
+func (this *Meta) GetContextMetas(recort interface{}, context *core.Context) (metas []Metaor) {
+	return this.GetContextResource(context).GetMetas([]string{})
 }
 
-func (meta *Meta) GetMetas() (metas []Metaor) {
+func (this *Meta) GetMetas() (metas []Metaor) {
 	return
 }
 
-func (meta *Meta) GetResource() Resourcer {
-	return meta.Resource
+func (this *Meta) GetResource() Resourcer {
+	return this.Resource
 }
 
 // GetFieldName get meta's field name
-func (meta *Meta) GetFieldName() string {
-	return meta.FieldName
+func (this *Meta) GetFieldName() string {
+	return this.FieldName
 }
 
 // SetFieldName set meta's field name
-func (meta *Meta) SetFieldName(name string) {
-	meta.FieldName = name
+func (this *Meta) SetFieldName(name string) {
+	this.FieldName = name
 }
 
 // GetSetter get setter from meta
-func (meta Meta) GetSetter() func(resource interface{}, metaValue *MetaValue, context *core.Context) error {
-	return meta.Setter
+func (this Meta) GetSetter() func(recorde interface{}, metaValue *MetaValue, context *core.Context) error {
+	return this.Setter
 }
 
 // SetSetter set setter to meta
-func (meta *Meta) SetSetter(fc func(resource interface{}, metaValue *MetaValue, context *core.Context) error) {
-	meta.Setter = fc
+func (this *Meta) SetSetter(fc func(recorde interface{}, metaValue *MetaValue, context *core.Context) error) {
+	this.Setter = fc
 }
 
 // GetValuer get valuer from meta
-func (meta *Meta) GetValuer() func(interface{}, *core.Context) interface{} {
-	return meta.Valuer
+func (this *Meta) GetValuer() func(interface{}, *core.Context) interface{} {
+	return this.Valuer
 }
 
 // SetValuer set valuer for meta
-func (meta *Meta) SetValuer(fc func(interface{}, *core.Context) interface{}) {
-	meta.Valuer = fc
+func (this *Meta) SetValuer(fc func(interface{}, *core.Context) interface{}) {
+	this.Valuer = fc
 }
 
 // GetFormattedValuer get formatted valuer from meta
-func (meta *Meta) GetFormattedValuer() func(interface{}, *core.Context) interface{} {
-	if meta.FormattedValuer != nil {
-		return meta.FormattedValuer
+func (this *Meta) GetFormattedValuer() func(interface{}, *core.Context) interface{} {
+	if this.FormattedValuer != nil {
+		return this.FormattedValuer
 	}
-	return meta.Valuer
+	return this.Valuer
 }
 
 // SetFormattedValuer set formatted valuer for meta
-func (meta *Meta) SetFormattedValuer(fc func(interface{}, *core.Context) interface{}) {
-	meta.FormattedValuer = fc
+func (this *Meta) SetFormattedValuer(fc func(interface{}, *core.Context) interface{}) {
+	this.FormattedValuer = fc
 }
 
-// HasPermission check has permission or not
-func (meta *Meta) HasPermissionE(mode roles.PermissionMode, context *core.Context) (ok bool, err error) {
-	if meta.Permission == nil {
-		return true, roles.ErrDefaultPermission
+// HasContextPermission check has permission or not
+func (this *Meta) HasPermission(mode roles.PermissionMode, context *core.Context) (perm roles.Perm) {
+	if this.Permission == nil {
+		return
 	}
-	var roles_ = []interface{}{}
-	for _, role := range context.Roles {
-		roles_ = append(roles_, role)
-	}
-	return roles.HasPermissionDefaultE(true, meta.Permission, mode, roles_...)
+	return this.Permission.HasPermission(context, mode, context.Roles.Interfaces()...)
 }
 
 // SetPermission set permission for meta
-func (meta *Meta) SetPermission(permission *roles.Permission) {
-	meta.Permission = permission
+func (this *Meta) SetPermission(permission *roles.Permission) {
+	this.Permission = permission
 }
 
 // PreInitialize when will be run before initialize, used to fill some basic necessary information
-func (meta *Meta) PreInitialize() error {
-	if meta.Name == "" {
-		utils.ExitWithMsg("Meta should have name: %v", reflect.TypeOf(meta))
-	} else if meta.FieldName == "" {
-		meta.FieldName = meta.Name
+func (this *Meta) PreInitialize() error {
+	if this.Name == "" {
+		panic(fmt.Errorf("Meta should have name: %v", reflect.TypeOf(this)))
+	} else if this.FieldName == "" {
+		this.FieldName = this.Name
 	}
-
-	if meta.Name == "RegionID" {
-		println()
-	}
-
-	// parseNestedField used to handle case like Profile.Name
-	var parseNestedField = func(value reflect.Value, name string) (reflect.Value, string) {
-		fields := strings.Split(name, ".")
-		value = reflect.Indirect(value)
-		for _, field := range fields[:len(fields)-1] {
-			value = value.FieldByName(field)
-		}
-
-		return value, fields[len(fields)-1]
-	}
-
-	var getField = func(fields []*aorm.StructField, name string) *aorm.StructField {
-		for _, field := range fields {
-			if field.Name == name || field.DBName == name {
-				return field
-			}
-		}
-		return nil
-	}
-
-	var nestedField = strings.Contains(meta.FieldName, ".")
-	var scope = meta.BaseResource.GetResource().FakeScope
-	if nestedField {
-		subModel, name := parseNestedField(reflect.ValueOf(meta.BaseResource.GetResource().Value), meta.FieldName)
-		meta.FieldStruct = getField(scope.New(subModel.Interface()).GetStructFields(), name)
-	} else {
-		meta.FieldStruct = getField(scope.GetStructFields(), meta.FieldName)
+	if this.FieldStruct = this.BaseResource.GetModelStruct().FieldByPath(this.FieldName); this.FieldStruct != nil {
+		this.Typ = utils.IndirectType(this.FieldStruct.Struct.Type)
 	}
 	return nil
 }
 
 // Initialize initialize meta, will set valuer, setter if haven't configure it
-func (meta *Meta) Initialize() error {
-	if meta.Valuer == nil {
-		setupValuer(meta, meta.FieldName, meta.GetBaseResource().NewStruct())
+func (this *Meta) Initialize() error {
+	if this.Valuer == nil {
+		setupValuer(this, this.FieldName, this.GetBaseResource().NewStruct())
 	}
 
-	if meta.Valuer == nil {
-		utils.ExitWithMsg("Meta %v is not supported for resource %v, no `Valuer` configured for it", meta.FieldName, reflect.TypeOf(meta.BaseResource.GetResource().Value))
+	if this.Valuer == nil {
+		panic(fmt.Errorf("Meta %v is not supported for resource %v, no `Valuer` configured for it", this.FieldName, reflect.TypeOf(this.BaseResource.GetResource().Value)))
 	}
 
-	if meta.Setter == nil {
-		setupSetter(meta, meta.FieldName, meta.GetBaseResource().NewStruct())
+	if this.Setter == nil {
+		setupSetter(this, this.FieldName, this.GetBaseResource().NewStruct())
 	}
 	return nil
+}
+
+func (this *Meta) DBName() string {
+	if this.FieldStruct != nil {
+		return this.FieldStruct.DBName
+	}
+	return ""
+}
+
+func (this *Meta) IsNewRecord(value interface{}) bool {
+	if value == nil {
+		return true
+	}
+	if this.FieldStruct != nil && this.FieldStruct.IsChild {
+		return false
+	}
+	if struc := aorm.StructOf(value); struc != nil && struc.GetID(value).IsZero() {
+		return true
+	}
+	return false
 }
 
 func getNestedModel(value interface{}, fieldName string, context *core.Context) interface{} {
@@ -267,9 +291,13 @@ func getNestedModel(value interface{}, fieldName string, context *core.Context) 
 	for _, field := range fields[:len(fields)-1] {
 		if model.CanAddr() {
 			submodel := model.FieldByName(field)
-			if context.DB.NewRecord(submodel.Interface()) && !context.DB.NewRecord(model.Addr().Interface()) {
+			if aorm.ZeroIdOf(submodel.Interface()) && aorm.ZeroIdOf(model.Addr().Interface()) {
 				if submodel.CanAddr() {
-					context.DB.Model(model.Addr().Interface()).Association(field).Find(submodel.Addr().Interface())
+					if err := context.DB().Model(model.Addr().Interface()).Association(field).Find(submodel.Addr().Interface()).Error(); err != nil {
+						if !aorm.IsRecordNotFoundError(err) {
+							panic(err)
+						}
+					}
 					model = submodel
 				} else {
 					break

@@ -42,7 +42,7 @@ func (n DBActionEvent) Names() []string {
 	if (n & E_DB_ACTION_FIND_ONE) != 0 {
 		s = append(s, "findOne")
 	}
-	if (n & E_DB_ACTION_SAVE) != 0 {
+	if (n & E_DB_ACTION_UPDATE) != 0 {
 		s = append(s, "save")
 	}
 	if (n & BEFORE) != 0 {
@@ -86,7 +86,7 @@ const (
 	E_DB_ACTION_DELETE
 	E_DB_ACTION_FIND_MANY
 	E_DB_ACTION_FIND_ONE
-	E_DB_ACTION_SAVE
+	E_DB_ACTION_UPDATE
 )
 
 type DBEvent struct {
@@ -95,19 +95,26 @@ type DBEvent struct {
 	Action  DBActionEvent
 	Context *core.Context
 	DBError error
+	old interface{}
 }
 
 func NewDBEvent(action DBActionEvent, ctx *core.Context) *DBEvent {
 	return &DBEvent{EventInterface: edis.NewEvent(action.FullName()), Action: action, Context: ctx}
 }
 
-func (e *DBEvent) DB() *aorm.DB {
-	return e.Context.GetDB()
+func (e *DBEvent) DB(db ...*aorm.DB) *aorm.DB {
+	for _, db := range db {
+		e.Context.SetRawDB(db)
+	}
+	return e.Context.DB()
 }
 
-func (e *DBEvent) SetDB(DB *aorm.DB) *DBEvent {
-	e.Context.SetDB(DB)
-	return e
+func (e *DBEvent) Old() interface{} {
+	return e.old
+}
+
+func (e *DBEvent) New() interface{} {
+	return e.Result()
 }
 
 func (e *DBEvent) Resource() Resourcer {
@@ -143,7 +150,7 @@ func (e DBEvent) before() *DBEvent {
 }
 
 func (e DBEvent) save() *DBEvent {
-	e.Action = E_DB_ACTION_SAVE
+	e.Action = E_DB_ACTION_UPDATE
 	e.updateName()
 	return &e
 }

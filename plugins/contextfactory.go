@@ -18,7 +18,7 @@ func (p *ContextFactoryPlugin) ProvideOptions() []string {
 	return []string{p.ContextFactoryKey}
 }
 
-func (p *ContextFactoryPlugin) Init(options *plug.Options) {
+func (p *ContextFactoryPlugin) ProvidesOptions(options *plug.Options) {
 	translator := options.GetInterface(p.TranslatorKey).(*i18nmod.Translator)
 	cf := core.NewContextFactory(translator)
 	options.Set(p.ContextFactoryKey, cf)

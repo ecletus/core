@@ -4,7 +4,9 @@ import (
 	"github.com/ecletus-pkg/locale"
 	"github.com/ecletus/plug"
 	"github.com/moisespsena-go/i18n-modular/i18nmod"
-	"github.com/op/go-logging"
+	path_helpers "github.com/moisespsena-go/path-helpers"
+
+	"github.com/moisespsena-go/logging"
 )
 
 type TranslatorPlugin struct {
@@ -12,13 +14,13 @@ type TranslatorPlugin struct {
 	LocaleKey     string
 	BackendsKey   []string
 	loaded        bool
-	log           *logging.Logger
+	log           logging.Logger
 	PreLoad       []func()
 	translator    *i18nmod.Translator
 	locale        *locale.Locale
 }
 
-func (p *TranslatorPlugin) SetLog(log *logging.Logger) {
+func (p *TranslatorPlugin) SetLog(log logging.Logger) {
 	p.log = log
 }
 
@@ -30,7 +32,7 @@ func (p *TranslatorPlugin) RequireOptions() []string {
 	return append([]string{p.LocaleKey}, p.BackendsKey...)
 }
 
-func (p *TranslatorPlugin) Init(options *plug.Options) error {
+func (p *TranslatorPlugin) ProvidesOptions(options *plug.Options) error {
 	p.locale = options.GetInterface(p.LocaleKey).(*locale.Locale)
 	p.translator = i18nmod.NewTranslator()
 	p.translator.DefaultLocale = p.locale.Default
@@ -57,9 +59,11 @@ func (p *TranslatorPlugin) Load() {
 	}
 
 	if err := p.translator.PreloadAll(); err != nil {
+		if p.log == nil {
+			p.log = logging.GetOrCreateLogger(path_helpers.GetCalledDir())
+		}
 		p.log.Error("Load translations failed: %v", err)
 	} else {
 		p.loaded = true
 	}
-
 }

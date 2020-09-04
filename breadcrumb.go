@@ -1,8 +1,8 @@
 package core
 
-type BreadcrumberFunc func(ctx *Context) []Breadcrumb
+type BreadCrumberFunc func(ctx *Context) []Breadcrumb
 
-func (f BreadcrumberFunc) Breadcrumbs(ctx *Context) []Breadcrumb {
+func (f BreadCrumberFunc) Breadcrumbs(ctx *Context) []Breadcrumb {
 	return f(ctx)
 }
 

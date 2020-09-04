@@ -9,6 +9,10 @@ import (
 
 // PatchURL updates the query part of the request url.
 //     PatchURL("google.com","key","value") => "google.com?key=value"
+//     PatchURL("google.com?key=value","key","value") => "google.com"
+//     PatchURL("google.com", "~a[]","b") => "google.com?a[]=b"
+//     PatchURL("google.com?a[]=b","~a[]","c") => "google.com?a[]=b&a[]=c"
+//     PatchURL("google.com?a[]=b&a[]=c","~a[]","c") => "google.com?a[]=b"
 func PatchURL(originalURL string, params ...interface{}) (patchedURL string, err error) {
 	url, err := nurl.Parse(originalURL)
 	if err != nil {
@@ -21,7 +25,32 @@ func PatchURL(originalURL string, params ...interface{}) (patchedURL string, err
 		key := fmt.Sprintf("%v", params[i*2])
 		value := fmt.Sprintf("%v", params[i*2+1])
 
-		if value == "" {
+		if key[0] == '~' {
+			key = key[1:]
+			if values, ok := query[key]; ok {
+				var (
+					newValues []string
+					has bool
+				)
+				for _, v := range values {
+					if v == value {
+						has = true
+					} else {
+						newValues = append(newValues, v)
+					}
+				}
+				if !has {
+					newValues = append(newValues, value)
+				}
+				if len(newValues) == 0 {
+					query.Del(key)
+				} else {
+					query[key] = newValues
+				}
+			} else {
+				query.Set(key, value)
+			}
+		} else if value == "" {
 			query.Del(key)
 		} else {
 			query.Set(key, value)
@@ -54,5 +83,10 @@ func JoinURL(originalURL string, paths ...interface{}) (joinedURL string, err er
 	}
 
 	joinedURL = u.String()
+	return
+}
+
+func MustJoinURL(originalURL string, paths ...interface{}) (joinedURL string) {
+	joinedURL, _ = JoinURL(originalURL, paths...)
 	return
 }

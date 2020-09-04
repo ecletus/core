@@ -1,328 +1,252 @@
 package core
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"net/http"
-	"sort"
+	"net/url"
+	"path"
 	"strings"
-	"sync"
+	"text/template"
+	"time"
 
-	"github.com/moisespsena-go/aorm/assigners"
+	"github.com/ecletus/roles"
+	"github.com/moisespsena-go/logging"
 
-	"github.com/moisespsena-go/error-wrap"
+	"github.com/apex/log"
 
-	"errors"
+	"github.com/moisespsena-go/maps"
 
-	"github.com/ecletus/core/config"
-	"github.com/ecletus/core/db"
+	"github.com/ecletus/core/db/dbconfig"
+
+	"github.com/moisespsena-go/getters"
+
+	"github.com/ecletus/core/site_config"
+
 	"github.com/ecletus/oss"
 	"github.com/ecletus/oss/filesystem"
-	"github.com/moisespsena-go/aorm"
 	"github.com/moisespsena-go/httpu"
 	"github.com/moisespsena-go/xroute"
+
+	"github.com/ecletus/core/db"
+	"github.com/moisespsena-go/aorm"
 )
 
-const DB_SYSTEM = "system"
+type SiteConfigType uint8
 
-var (
-	StopSiteIteration = errors.New("stop site iteration")
-	StopDBIteration   = errors.New("stop db iteration")
+const (
+	SiteConfigBasic SiteConfigType = iota
+	SiteConfigContextFactory
 )
 
-type SitesReaderInterface interface {
-	Get(siteName string) SiteInterface
-	GetOrError(siteName string) (SiteInterface, error)
-	All() []SiteInterface
-	Sorted() []SiteInterface
-	Names() []string
-	EachOrAll(siteName string, cb func(site SiteInterface) (err error)) error
-	Each(cb func(site SiteInterface) (err error)) error
+type Site struct {
+	name                    string
+	timeLocation            *time.Location
+	configGetter            getters.Getter
+	ConfigSetter            ConfigSetter
+	basicConfig             site_config.Config
+	Dbs                     map[string]*DB
+	mediaStorages           map[string]oss.NamedStorageInterface
+	systemStorage           *filesystem.FileSystem
+	storageNames            *oss.Names
+	handler                 xroute.ContextHandler
+	contextFactory          *ContextFactory
+	Data                    maps.Map
+	Middlewares             xroute.Middlewares
+	postInitCallbacks       []func()
+	handlerChangedCallbacks []func(oldh, newh xroute.ContextHandler)
+	onDestroyCallbacks      []func()
+	initialized,
+	registered bool
+	Log                    logging.Logger
+	PermissionModeProvider PermissionModeProvider
+	role                   *roles.Role
 }
 
-type SitesReader map[string]SiteInterface
+func NewSite(name string, basicConfig site_config.Config, configGetter getters.Getter, cf *ContextFactory) *Site {
+	s := &Site{
+		name:           name,
+		configGetter:   getters.MultipleGetter{configGetter, basicConfig.Raw.Getter()},
+		contextFactory: cf,
+		basicConfig:    basicConfig,
+		Dbs:            make(map[string]*DB),
+		mediaStorages:  make(map[string]oss.NamedStorageInterface),
+		systemStorage:  filesystem.New(&filesystem.Config{RootDir: basicConfig.RootDir}),
+		storageNames:   oss.NewNames(),
+		handler:        xroute.NewMux(),
+	}
+	s.PermissionModeProvider = &SitePermissionModeProvider{
+		Site: s,
+	}
+	if basicConfig.TimeLocation != "" {
+		var err error
+		if s.timeLocation, err = time.LoadLocation(basicConfig.TimeLocation); err != nil {
+			log.Warnf("locate time location %q from site %q failed: %s", basicConfig.TimeLocation, name, err)
+			s.timeLocation = time.Local
+		}
+	} else {
+		s.timeLocation = time.Local
+	}
 
-func (r SitesReader) Get(siteName string) SiteInterface {
-	s, _ := r[siteName]
 	return s
 }
 
-func (r SitesReader) GetOrError(siteName string) (SiteInterface, error) {
-	s, ok := r[siteName]
-	if !ok {
-		return nil, fmt.Errorf("Site %q does not exists.", siteName)
-	}
-	return s, nil
-}
-
-func (r SitesReader) All() (sites []SiteInterface) {
-	for _, s := range r {
-		sites = append(sites, s)
-	}
-	return
-}
-
-func (r SitesReader) Names() (names []string) {
-	for k := range r {
-		names = append(names, k)
-	}
-	return
-}
-
-func (r SitesReader) Sorted() []SiteInterface {
-	sites := r.All()
-	sort.Slice(sites, func(a, b int) bool {
-		return sites[a].Name() < sites[b].Name()
-	})
-	return sites
-}
-
-func (r SitesReader) Each(cb func(site SiteInterface) (err error)) (err error) {
-	for _, s := range r {
-		if err = cb(s); err != nil {
-			if err == StopSiteIteration {
-				return nil
-			}
-			return errwrap.Wrap(err, "Site %q", s.Name())
+func (this *Site) PostInit(f ...func()) {
+	if this.initialized {
+		for _, f := range f {
+			f()
 		}
+		return
 	}
-	return nil
+	this.postInitCallbacks = append(this.postInitCallbacks, f...)
 }
 
-func (r SitesReader) EachOrAll(siteName string, cb func(site SiteInterface) (err error)) error {
-	if siteName == "" || siteName == "*" {
-		return r.Each(cb)
-	}
-
-	site, err := r.GetOrError(siteName)
-
-	if err != nil {
-		return err
-	}
-
-	return cb(site)
+func (this *Site) OnDestroy(f ...func()) {
+	this.onDestroyCallbacks = append(this.onDestroyCallbacks, f...)
 }
 
-type RawDB struct {
-	DB   *DB
-	conn db.RawDBConnection
-	lock sync.Mutex
+func (this *Site) IsRegistered() bool {
+	return this.registered
 }
 
-func (r *RawDB) Open(ctx context.Context) (conn db.RawDBConnection, err error) {
-	if conn, err = db.SystemRawFactories[r.DB.Config.Adapter](ctx, r.DB.Config); err == nil {
-		err = conn.Open()
-	}
-	return
+func (this *Site) TimeLocation() *time.Location {
+	return this.timeLocation
 }
 
-type RawDBConnectError struct {
-	message string
+func (this *Site) Handler() xroute.ContextHandler {
+	return this.handler
 }
 
-func (r *RawDBConnectError) Error() string {
-	return r.message
-}
-
-func (r *RawDB) Do(f func(con db.RawDBConnection)) {
-	r.lock.Lock()
-	defer r.lock.Unlock()
-	if r.conn == nil {
-		var err error
-		r.conn, err = r.Open(PrepareRawDBContext(r.DB))
-		if err != nil {
-			panic(&RawDBConnectError{fmt.Sprintf("github.com/ecletus/qor.site: Site %q: Failed to "+
-				"open RAW connection of DB %q: %v", r.DB.Site.Name(), r.DB.Name, err)})
-		}
-	}
-	r.conn.Do(f)
-}
-
-func (r *RawDB) Close() {
-	r.lock.Lock()
-	defer r.lock.Unlock()
-	if r.conn != nil {
-		err := r.conn.Close()
-		if err == nil {
-			r.conn = nil
-		} else {
-			panic(&RawDBConnectError{fmt.Sprintf("github.com/ecletus/qor.site: Site %q: Failed to "+
-				"close RAW connection of DB %q: %v", r.DB.Site.Name(), r.DB.Name, err)})
+func (this *Site) SetHandler(handler xroute.ContextHandler) {
+	if old := this.handler; old != handler {
+		this.handler = handler
+		for _, f := range this.handlerChangedCallbacks {
+			f(old, handler)
 		}
 	}
 }
 
-type DB struct {
-	initCallbacks []func(DB *DB)
-	Site          SiteInterface
-	Config        *config.DBConfig
-	Name          string
-	DB            *aorm.DB
-	Raw           *RawDB
-	open          func() (DB *aorm.DB, err error)
+func (this *Site) HandlerChanged(f ...func(oldh, newh xroute.ContextHandler)) {
+	this.handlerChangedCallbacks = append(this.handlerChangedCallbacks, f...)
 }
 
-func (db *DB) InitCallback(cb ...func(DB *DB)) {
-	db.initCallbacks = append(db.initCallbacks, cb...)
-	if db.DB != nil {
-		for _, cb := range cb {
-			cb(db)
-		}
-	}
+func (this *Site) GetConfig(key interface{}) (value interface{}, ok bool) {
+	return this.configGetter.Get(key)
 }
 
-func (db *DB) Open() (err error) {
-	if db.DB != nil {
-		return fmt.Errorf("DB %q for site %q is open", db.Name, db.Site.Name())
-	}
-	db.DB, err = db.open()
-	if err != nil {
-		return errwrap.Wrap(err, "Open DB %q for site %q failed", db.Name, db.Site.Name())
-	}
-	for _, cb := range db.initCallbacks {
-		cb(db)
-	}
+func (this *Site) MustConfig(key interface{}) (value interface{}) {
+	value, _ = this.configGetter.Get(key)
 	return
 }
 
-func (db *DB) Close() (err error) {
-	if db.DB != nil {
-		err = db.DB.Close()
-		if err == nil {
-			db.DB = nil
-		} else {
-			err = errwrap.Wrap(err, "Close DB %q for site %q failed", db.Name, db.Site.Name())
-		}
-	}
-	return
-}
-
-func (db *DB) ReOpen() (err error) {
-	if err = db.Close(); err == nil {
-		err = db.Open()
-	}
-	return
-}
-
-func DefaultPrepareRawDBContext(db *DB) context.Context {
-	return nil
-}
-
-var PrepareRawDBContext = DefaultPrepareRawDBContext
-
-type SiteInterface interface {
-	xroute.Handler
-	Config() *config.SiteConfig
-	AdvancedConfig() config.OtherConfig
-	GetDB(name string) *DB
-	GetSystemDB() *DB
-	EachDB(f func(db *DB) (err error)) (err error)
-	StorageNames() *oss.Names
-	SystemStorage() *filesystem.FileSystem
-	MediaStorages() map[string]oss.NamedStorageInterface
-	GetMediaStorage(name string) oss.NamedStorageInterface
-	GetMediaStorageOrDefault(name string) oss.NamedStorageInterface
-	GetDefaultMediaStorage() oss.NamedStorageInterface
-	PrepareContext(ctx *Context) *Context
-	Name() string
-	Init() error
-	InitOrPanic() SiteInterface
-	NewContext() *Context
-	PublicURL(path ...string) string
-	PublicURLf(path ...interface{}) string
-}
-
-type Site struct {
-	config         *config.SiteConfig
-	dbs            map[string]*DB
-	mediaStorages  map[string]oss.NamedStorageInterface
-	systemStorage  *filesystem.FileSystem
-	storageNames   *oss.Names
-	Handler        xroute.ContextHandler
-	contextFactory *ContextFactory
-}
-
-func NewSite(contextFactory *ContextFactory, config *config.SiteConfig) *Site {
-	return &Site{
-		contextFactory: contextFactory,
-		config:         config,
-		dbs:            make(map[string]*DB),
-		mediaStorages:  make(map[string]oss.NamedStorageInterface),
-		systemStorage:  filesystem.New(&filesystem.Config{RootDir: config.RootDir}),
-		storageNames:   oss.NewNames(),
-		Handler:        xroute.NewMux(),
-	}
+func (this *Site) SetConfig(key string, value interface{}) (err error) {
+	return this.ConfigSetter.Set(key, value)
 }
 
 type SetupDB func(setup func(db *DB) error) (err error)
 
-func (s *Site) Config() *config.SiteConfig {
-	return s.config
+func (this *Site) Role() *roles.Role {
+	return this.role
 }
 
-func (s *Site) AdvancedConfig() config.OtherConfig {
-	return s.config.OtherConfig
+func (this *Site) BasicConfig() *site_config.Config {
+	return &this.basicConfig
 }
 
-func (s *Site) Name() string {
-	return s.config.Name
+func (this *Site) Config() SiteConfig {
+	return &struct {
+		getters.Getter
+		ConfigSetter
+	}{this.configGetter, this.ConfigSetter}
 }
 
-func (s *Site) Init() (err error) {
-	s.mediaStorages["default"] = &oss.NamedStorage{s.systemStorage, "default"}
+func (this *Site) Name() string {
+	return this.name
+}
 
-	for name, storageConfig := range s.config.MediaStorage {
-		s.mediaStorages[name] = &oss.NamedStorage{storageConfig["@storage"].(oss.StorageInterface), name}
+func (this *Site) Title() string {
+	return this.basicConfig.Title
+}
+
+func (this *Site) Init() (err error) {
+	this.mediaStorages["default"] = &oss.NamedStorage{this.systemStorage, "default"}
+	if this.basicConfig.MediaStorage != nil {
+		for name, storageConfig := range this.basicConfig.MediaStorage {
+			this.mediaStorages[name] = &oss.NamedStorage{storageConfig["@storage"].(oss.StorageInterface), name}
+		}
 	}
 
-	for name, dbConfig := range s.config.Db {
-		func(dbConfig *config.DBConfig) {
-			var d *DB
-			d = &DB{
-				Site:   s,
-				Config: dbConfig,
-				Name:   name,
-				open: func() (DB *aorm.DB, err error) {
-					if DB, err = db.SystemFactories.Factory(dbConfig); err == nil {
-						DB = assigners.Assigners().ApplyToDB(DB)
-						DB = DB.Inside(PREFIX+".site["+s.Name()+"]", "DB["+name+"]").Set(PREFIX+".site", s).Set(PREFIX+".db", d)
-					}
-					return
-				},
-			}
-			if err := d.Open(); err != nil {
-				panic(err)
-			}
-			d.Raw = &RawDB{DB: d}
-			s.dbs[name] = d
-		}(dbConfig)
+	if this.basicConfig.Db != nil {
+		for name, dbConfig := range this.basicConfig.Db {
+			func(dbConfig *dbconfig.DBConfig) {
+				var d *DB
+				d = &DB{
+					Site:   this,
+					Config: dbConfig,
+					Name:   name,
+					open: func() (DB *aorm.DB, err error) {
+						if DB, err = db.SystemFactories.Factory(dbConfig); err == nil {
+							DB = DB.Inside(PREFIX+".site["+this.Name()+"]", "DB["+name+"]").Set(PREFIX+".site", this).Set(PREFIX+".db", d)
+						}
+						if dbConfig.CommitDisabled {
+							DB = DB.Opt(aorm.OptCommitDisabled())
+						}
+						return
+					},
+				}
+
+				if err := d.Open(); err != nil {
+					panic(err)
+				}
+				//d.Raw = &RawDB{DB: d}
+				this.Dbs[name] = d
+			}(dbConfig)
+		}
 	}
 
+	this.role = &roles.Role{}
+	this.role.Register(roles.Global.Descriptors().Intersection(this.PermissionModeProvider.Provides().Strings())...)
+
+	for _, f := range this.postInitCallbacks {
+		f()
+	}
+
+	this.postInitCallbacks = nil
+	this.initialized = true
 	return
 }
 
-func (site *Site) InitOrPanic() SiteInterface {
-	err := site.Init()
+func (this *Site) InitOrPanic() *Site {
+	err := this.Init()
 	if err != nil {
-		panic(fmt.Errorf("Init site %q failed: %v", site.Name(), err))
+		this.Log.Errorf("Init this %q failed: %v", this.Name(), err)
 	}
-	return site
+	return this
 }
 
-func (site *Site) StorageNames() *oss.Names {
-	return site.storageNames
+func (this *Site) StorageNames() *oss.Names {
+	return this.storageNames
 }
 
-func (site *Site) GetDB(name string) *DB {
-	return site.dbs[name]
+func (this *Site) GetDB(name string) *DB {
+	return this.Dbs[name]
 }
 
-func (site *Site) GetSystemDB() *DB {
-	return site.GetDB(DB_SYSTEM)
+func (this *Site) GetDBOrSystem(name string) *DB {
+	db, ok := this.Dbs[name]
+	if !ok {
+		return this.GetSystemDB()
+	}
+	return db
 }
 
-func (site *Site) EachDB(f func(db *DB) error) (err error) {
-	for _, db := range site.dbs {
+func (this *Site) GetSystemDB() *DB {
+	return this.GetDB(dbconfig.DB_SYSTEM)
+}
+
+func (this *Site) EachDB(f func(db *DB) error) (err error) {
+	for _, db := range this.Dbs {
 		if err = f(db); err != nil {
 			if err == StopDBIteration {
 				return nil
@@ -333,78 +257,95 @@ func (site *Site) EachDB(f func(db *DB) error) (err error) {
 	return
 }
 
-func (site *Site) SystemStorage() *filesystem.FileSystem {
-	return site.systemStorage
+func (this *Site) SystemStorage() *filesystem.FileSystem {
+	return this.systemStorage
 }
 
-func (site *Site) MediaStorages() map[string]oss.NamedStorageInterface {
-	return site.mediaStorages
+func (this *Site) MediaStorages() map[string]oss.NamedStorageInterface {
+	return this.mediaStorages
 }
 
-func (site *Site) GetMediaStorage(name string) oss.NamedStorageInterface {
-	return site.mediaStorages[name]
+func (this *Site) GetMediaStorage(name string) oss.NamedStorageInterface {
+	return this.mediaStorages[name]
 }
 
-func (site *Site) GetMediaStorageOrDefault(name string) oss.NamedStorageInterface {
-	s := site.GetMediaStorage(name)
+func (this *Site) GetMediaStorageOrDefault(name string) oss.NamedStorageInterface {
+	s := this.GetMediaStorage(name)
 	if s == nil {
-		return site.GetDefaultMediaStorage()
+		return this.GetDefaultMediaStorage()
 	}
 	return s
 }
 
-func (site *Site) GetDefaultMediaStorage() oss.NamedStorageInterface {
-	return site.GetMediaStorage("default")
+func (this *Site) GetDefaultMediaStorage() oss.NamedStorageInterface {
+	return this.GetMediaStorage("default")
 }
 
-func (site *Site) PrepareContext(context *Context) *Context {
-	context.AsTop()
-	context.Site = site
-	DB := site.GetSystemDB().DB
-	if context.Request != nil {
-		DB = DB.Inside("Req[" + context.Request.Method + " " + context.Request.RequestURI + "]")
+func (this *Site) PrepareContext(ctx *Context) *Context {
+	ctx.AsTop()
+	ctx.Site = this
+	DB := this.GetSystemDB().DB
+	if ctx.Request == nil {
+		var err error
+		ctx.Request, err = http.NewRequest(http.MethodGet, this.basicConfig.PublicURL, nil)
+		if err != nil {
+			log.Errorf("Site %q: prepare context: new request failed: %v", err.Error())
+		}
+		ctx.Request.RequestURI = ctx.Request.URL.RequestURI()
+		ctx.Prefix = ctx.Request.URL.Path
+		ctx.Request.URL = &url.URL{Path: "/"}
+		if ctx.StaticURL == "" {
+			ctx.StaticURL = this.basicConfig.StaticURL
+		}
+		ctx.Request = ctx.Request.WithContext(context.WithValue(ctx.Request.Context(), CONTEXT_KEY, ctx))
+		ctx.OriginalURL, _ = url.Parse(this.basicConfig.PublicURL)
+	} else {
+		DB = DB.Inside("Req[" + ctx.Request.Method + " " + ctx.Request.RequestURI + "]")
+		if ctx.RouteContext == nil {
+			ctx.RouteContext = xroute.NewRouteContext()
+		}
+		if ctx.StaticURL == "" || ctx.StaticURL[0] == '/' {
+			ctx.StaticURL += "/static"
+		}
 	}
-	context.SetDB(DB.Set(CONTEXT_KEY, context))
-	if context.RouteContext == nil {
-		context.RouteContext = xroute.NewRouteContext()
-	}
-	return context
+	ctx.Role = this.role.Copy()
+	ctx.SetDB(DB.Set(CONTEXT_KEY, ctx))
+	return ctx
 }
 
-func (site *Site) ServeHTTPContext(w http.ResponseWriter, r *http.Request, rctx *xroute.RouteContext) {
+func (this *Site) ServeHTTPContext(w http.ResponseWriter, r *http.Request, rctx *xroute.RouteContext) {
 	if strings.HasPrefix(r.URL.Path, PATH_MEDIA) {
 		r.URL.Path = strings.TrimPrefix(r.URL.Path, PATH_MEDIA)
-		storage := site.GetDefaultMediaStorage()
+		storage := this.GetDefaultMediaStorage()
 		storage.ServeHTTP(w, r)
 		return
 	}
 	prefix := httpu.PrefixR(r)
-	r, context := site.contextFactory.NewContextFromRequestPair(w, r, prefix)
-	context.StaticURL += "/static"
-	site.PrepareContext(context)
+	r, context := this.contextFactory.NewContextFromRequestPair(w, r, prefix)
+	this.PrepareContext(context)
 	rctx.Data[CONTEXT_KEY] = context
 	rctx.ChainRequestSetters[CONTEXT_KEY] = xroute.NewChainRequestSetter(func(chain *xroute.ChainHandler, r *http.Request) {
 		chain.Context.Data[CONTEXT_KEY].(*Context).SetRequest(r)
 	})
-	site.Handler.ServeHTTPContext(w, r, rctx)
+	this.handler.ServeHTTPContext(w, r, rctx)
 }
 
-func (site *Site) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	site.Handler.ServeHTTPContext(w, r, nil)
+func (this *Site) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	this.handler.ServeHTTPContext(w, r, nil)
 }
 
-func (site *Site) NewContext() *Context {
-	return site.PrepareContext(&Context{})
+func (this *Site) NewContext() *Context {
+	return this.PrepareContext(&Context{})
 }
 
-func (site *Site) PublicURL(p ...string) string {
+func (this *Site) PublicURL(p ...string) string {
 	if len(p) > 0 {
-		return strings.Join(append([]string{site.config.PublicURL}, p...), "/")
+		return strings.Join(append([]string{this.basicConfig.PublicURL}, strings.TrimPrefix(path.Join(p...), "/")), "/")
 	}
-	return site.config.PublicURL
+	return this.basicConfig.PublicURL
 }
 
-func (site *Site) PublicURLf(p ...interface{}) string {
+func (this *Site) PublicURLf(p ...interface{}) string {
 	parts := make([]string, len(p))
 	for i, part := range p {
 		if pt, ok := part.(string); ok {
@@ -413,16 +354,32 @@ func (site *Site) PublicURLf(p ...interface{}) string {
 			parts[i] = fmt.Sprint(pt)
 		}
 	}
-	return site.PublicURL(parts...)
+	return this.PublicURL(parts...)
 }
 
-func GetSiteFromDB(db *aorm.DB) SiteInterface {
+func (this *Site) TextRender(v string) (s string, err error) {
+	var tmpl *template.Template
+	if tmpl, err = template.New("<no name>").Parse(v); err != nil {
+		return
+	}
+	var out bytes.Buffer
+	err = tmpl.Execute(&out, this)
+	if err == nil {
+		s = out.String()
+	}
+	return
+}
+
+func GetSiteFromDB(db *aorm.DB) *Site {
 	s, _ := db.Get(PREFIX + ".site")
-	return s.(SiteInterface)
+	return s.(*Site)
 }
 
-func GetSiteFromRequest(r *http.Request) SiteInterface {
-	return ContextFromRequest(r).Site
+func GetSiteFromRequest(r *http.Request) *Site {
+	if ctx := ContextFromRequest(r); ctx != nil {
+		return ctx.Site
+	}
+	return nil
 }
 
 func GetDBFromDB(db *aorm.DB) *DB {

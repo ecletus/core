@@ -11,6 +11,8 @@ type Struct interface {
 	NewSlicePtr() interface{}
 	NewSlicePtrArgs(len, cap int) interface{}
 	NewSliceRecord() (slice interface{}, recorde interface{})
+	NewChan(buf int) interface{}
+	NewChanPtr(buf int) interface{}
 	GetValue() interface{}
 }
 
@@ -60,6 +62,16 @@ func (v StructValue) NewSlicePtr() interface{} {
 	return v.newSliceArgs(0, 0, true)
 }
 
+// NewChan initialize a channel of struct for the Value
+func (v StructValue) NewChan(buf int) interface{} {
+	return v.newChanArgs(buf, false)
+}
+
+// NewChanPtr initialize a channel of struct ptr for the Value
+func (v StructValue) NewChanPtr(buf int) interface{} {
+	return v.newChanArgs(buf, true)
+}
+
 // NewSlice initialize a slice of struct for the Value
 func (v StructValue) NewSliceRecord() (slice interface{}, recorde interface{}) {
 	slice = v.NewSliceArgs(1, 1)
@@ -89,4 +101,16 @@ func (v StructValue) newSliceArgs(len, cap int, ptr bool) interface{} {
 		return slice.Interface()
 	}
 	return slicePtr.Interface()
+}
+
+// NewSlice initialize a slice of struct for the Value
+func (v StructValue) newChanArgs(buf int, ptr bool) interface{} {
+	if v.Value == nil {
+		return nil
+	}
+	typ := reflect.TypeOf(v.Value)
+	if !ptr {
+		typ = typ.Elem()
+	}
+	return reflect.MakeChan(typ, buf).Interface()
 }

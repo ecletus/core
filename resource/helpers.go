@@ -2,67 +2,30 @@ package resource
 
 import (
 	"fmt"
-	"strings"
-
-	"github.com/ecletus/core/utils"
+	"github.com/ecletus/core"
 	"github.com/moisespsena-go/aorm"
+	"reflect"
 )
 
-// StringToPrimaryQuery to primary query params
-func StringToPrimaryQuery(res Resourcer, value string, exclude ...bool) (string, []interface{}) {
-	return StringsToPrimaryQuery(res, strings.Split(strings.Trim(value, ","), ","), exclude...)
-}
-
-// StringsToPrimaryQuery to primary query params
-func StringsToPrimaryQuery(res Resourcer, values []string, exclude ...bool) (string, []interface{}) {
-	if len(values) == 0 {
-		return "", nil
-	}
-
-	var (
-		sqls          []string
-		primaryValues []interface{}
-		scope         = res.GetFakeScope()
-	)
-
-	fields := res.GetPrimaryFields()
-	if len(values) > len(fields) {
-		return "", nil
-	}
-	op := "="
-	if exclude != nil && exclude[0] {
-		op = "<>"
-	}
-	for i, field := range fields {
-		sqls = append(sqls, fmt.Sprintf("%v.%v "+op+" ?", scope.QuotedTableName(), scope.Quote(field.DBName)))
-		primaryValues = append(primaryValues, values[i])
-	}
-
-	return strings.Join(sqls, " AND "), primaryValues
+type BytesParser interface {
+	ParseBytes(b []byte) error
 }
 
 // MetaValuesToPrimaryQuery to primary query params from meta values
-func MetaValuesToPrimaryQuery(res Resourcer, metaValues *MetaValues, exclude ...bool) (string, []interface{}) {
-	var (
-		values []string
-	)
-
+func MetaValuesToPrimaryQuery(ctx *core.Context, res Resourcer, metaValues *MetaValues, exclude bool) (string, []interface{}, error) {
 	if metaValues != nil {
-		for _, field := range res.GetPrimaryFields() {
-			if metaField := metaValues.Get(field.Name); metaField != nil {
-				values = append(values, utils.ToString(metaField.Value))
-			}
+		if metaField := metaValues.Get("ID"); metaField != nil {
+			return StringToPrimaryQuery(ctx, res, metaField.FirstStringValue(), exclude)
 		}
 	}
-
-	return StringsToPrimaryQuery(res, values, exclude...)
+	return "", nil, nil
 }
 
 // ValuesToPrimaryQuery to primary query params from values
-func ValuesToPrimaryQuery(res Resourcer, exclude bool, values ...interface{}) (string, []interface{}) {
+func ValuesToPrimaryQuery(ctx *core.Context, res Resourcer, exclude bool, values ...interface{}) (string, []interface{}) {
 	var (
 		sql, op string
-		scope   = res.GetFakeScope()
+		scope   = ctx.DB().NewScope(res.GetValue())
 	)
 
 	if values != nil {
@@ -75,4 +38,39 @@ func ValuesToPrimaryQuery(res Resourcer, exclude bool, values ...interface{}) (s
 	}
 
 	return sql, values
+}
+
+type ValueSetter struct {
+	value reflect.Value
+	ptr bool
+}
+
+func NewValueSetter(value reflect.Value) *ValueSetter {
+	return &ValueSetter{value, value.Kind() == reflect.Ptr}
+}
+
+func (this ValueSetter) SetNil(v bool) {
+
+}
+
+func (this ValueSetter) SetBool(x, null bool) {
+	if this.ptr {
+		v := reflect.New(this.value.Type().Elem())
+		this.value.Set(v)
+		if !null {
+			v.Elem().SetBool(x)
+		}
+	} else {
+		this.value.SetBool(x)
+	}
+}
+
+func (this ValueSetter) SetInt(x int64) {
+	if this.ptr {
+		v := reflect.New(this.value.Type())
+		this.value.Set(v)
+		v.SetInt(x)
+	} else {
+		this.value.SetInt(x)
+	}
 }

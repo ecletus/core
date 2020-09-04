@@ -72,10 +72,10 @@ function adminTasks() {
       all: ['gulpfile.js', pathto('javascripts/qor/*.js')]
     },
     styles = {
-      src: pathto('stylesheets/scss/{app,qor}.scss'),
+      src: pathto('stylesheets/scss/{app,qor,print}.scss'),
       dest: pathto('stylesheets'),
       vendors: pathto('stylesheets/vendors'),
-      main: pathto('stylesheets/{qor,app}.css'),
+      main: pathto('stylesheets/{qor,app,print}.css'),
       qorAdmin: [pathto('stylesheets/vendors.css'), pathto('stylesheets/qor.css'), pathto('stylesheets/app.css')],
       scss: pathto('stylesheets/scss/**/*.scss')
     };

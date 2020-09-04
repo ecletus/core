@@ -1,8 +1,11 @@
 package resource
 
 import (
+	"fmt"
 	"reflect"
 	"strings"
+
+	"github.com/pkg/errors"
 
 	"github.com/ecletus/core"
 	"github.com/moisespsena-go/aorm"
@@ -24,67 +27,104 @@ func setupValuer(meta *Meta, fieldName string, record interface{}) {
 	}
 
 	if meta.FieldStruct != nil {
-		meta.Valuer = func(value interface{}, context *core.Context) interface{} {
-			if value == nil {
-				return nil
+		meta.Valuer = func() func(record interface{}, context *core.Context) interface{} {
+			var (
+				modelStruct = meta.FieldStruct.BaseModel
+				pth         = strings.Split(fieldName, ".")
+				fieldName   string
+				field       *aorm.StructField
+				index       [][]int
+			)
+			pth, fieldName = pth[0:len(pth)-1], pth[len(pth)-1]
+
+			for _, f := range pth {
+				if f, ok := modelStruct.FieldsByName[f]; ok {
+					field = f
+					index = append(index, f.StructIndex)
+					if modelStruct = f.BaseModel; modelStruct == nil {
+						// TODO: not mapped field
+						panic(fmt.Errorf("field %q#%q is not mapped", meta.BaseResource.FullID(), meta.FieldName))
+						break
+					}
+				}
 			}
-			if context == nil {
-				v := reflect.ValueOf(value)
-				for _, f := range strings.Split(meta.FieldName, ".") {
-					if v = reflect.Indirect(v).FieldByName(f); !v.IsValid() {
+
+			field = modelStruct.FieldsByName[fieldName]
+
+			return func(record interface{}, context *core.Context) interface{} {
+				if record == nil {
+					return nil
+				}
+				var (
+					recordReflectValue = reflect.Indirect(reflect.ValueOf(record))
+					fieldValue         reflect.Value
+				)
+
+				if modelStruct == nil {
+					// TODO: not mapped field
+					return nil
+				} else {
+					for _, index := range index {
+						recordReflectValue = recordReflectValue.FieldByIndex(index)
+						if !recordReflectValue.IsValid() || (recordReflectValue.CanAddr() && recordReflectValue.IsNil()) {
+							return nil
+						}
+						recordReflectValue = reflect.Indirect(recordReflectValue)
+					}
+					if fieldValue = recordReflectValue.FieldByIndex(field.StructIndex); !fieldValue.IsValid() {
 						return nil
 					}
 				}
 
-				return v.Interface()
-			}
-			scope := context.DB.NewScope(value)
-			fieldName := meta.FieldName
-			if nestedField {
-				fields := strings.Split(fieldName, ".")
-				fieldName = fields[len(fields)-1]
-			}
-
-			if f, ok := scope.FieldByName(fieldName); ok {
-				if relationship := f.Relationship; relationship != nil && f.Field.CanAddr() {
-					if !scope.PrimaryKeyZero() {
-						if (relationship.Kind == "has_many" || relationship.Kind == "many_to_many") && f.Field.Len() == 0 {
-							context.DB.Model(value).Related(f.Field.Addr().Interface(), meta.FieldName)
-						} else if relationship.Kind == "has_one" || relationship.Kind == "belongs_to" {
-							if f.Field.Kind() == reflect.Ptr && f.Field.IsNil() {
-								var idValues []interface{}
-								value := reflect.Indirect(reflect.ValueOf(value))
-								for _, fieldName := range relationship.ForeignFieldNames {
-									if idValue := value.FieldByName(fieldName); idValue.IsValid() {
-										idValues = append(idValues, idValue.Interface())
-									} else {
-										idValues = append(idValues, nil)
-									}
+				if rel := field.Relationship; rel != nil && recordReflectValue.CanAddr() && !field.IsChild {
+					var (
+						recordValueInterface = recordReflectValue.Addr().Interface()
+						ID                   = modelStruct.GetID(recordValueInterface)
+					)
+					if ID != nil && !ID.IsZero() {
+						var DB = context.DB()
+						if rel.Kind == "has_many" || rel.Kind == "many_to_many" {
+							if fieldValue.IsNil() {
+								DB = DB.ModelStruct(modelStruct, recordValueInterface)
+								if err := DB.Association(field.Name).Find(fieldValue.Addr().Interface()).Error(); err != nil {
+									panic(err)
 								}
-
-								if aorm.Key(idValues...).String() == "" {
+							}
+						} else if rel.Kind == "has_one" || rel.Kind == "belongs_to" {
+							if fieldValue.Kind() == reflect.Ptr && fieldValue.IsNil() {
+								if rel.GetRelatedID(record).IsZero() {
 									return nil
 								}
-
-								if f.Field.Kind() == reflect.Ptr && f.Field.IsNil() {
-									f.Field.Set(reflect.New(f.Field.Type().Elem()))
+								if fieldValue.Kind() == reflect.Ptr && fieldValue.IsNil() {
+									fieldValue.Set(reflect.New(fieldValue.Type().Elem()))
 								}
 							}
 
-							if scope := context.DB.NewScope(f.Field.Interface()); scope.PrimaryKeyZero() {
-								relatedValue := reflect.Indirect(f.Field).Addr().Interface()
-								context.DB.Model(value).AutoInlinePreload(relatedValue).Related(relatedValue, meta.FieldName)
+							if fieldID := field.Model.GetID(fieldValue.Interface()); fieldID.IsZero() {
+								relatedValue := reflect.Indirect(fieldValue).Addr().Interface()
+								DB = DB.ModelStruct(modelStruct, recordValueInterface)
+								if err := DB.Association(field.Name).Find(relatedValue).Error(); err != nil {
+									if !aorm.IsRecordNotFoundError(err) {
+										context.AddError(errors.Wrapf(err, "inline preload related field %q", meta.FieldName))
+									}
+								}
 							}
 						}
-					} else if f.Field.Kind() == reflect.Ptr && f.Field.IsNil() {
+					} else if fieldValue.Kind() == reflect.Ptr && fieldValue.IsNil() {
 						return nil
 					}
 				}
 
-				return f.Field.Interface()
+				value := fieldValue.Interface()
+				if v, ok := value.(MetaValuer); ok {
+					return v.MetaValue()
+				}
+				return value
 			}
-
-			return ""
-		}
+		}()
 	}
+}
+
+type MetaValuer interface {
+	MetaValue() interface{}
 }

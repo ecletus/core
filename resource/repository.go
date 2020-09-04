@@ -10,8 +10,8 @@ type Repository interface {
 	FindOneLayout(key string, layout ...interface{}) (result interface{}, err error)
 	FindManyLayout(layout ...interface{}) (result interface{}, err error)
 	FindManyLayoutOrDefault(layout interface{}, defaul ...interface{}) (interface{}, error)
-	FindManyBasic() (result []BasicValue, err error)
-	FindOneBasic(key string) (result BasicValue, err error)
+	FindManyBasic() (result []BasicValuer, err error)
+	FindOneBasic(key string) (result BasicValuer, err error)
 	FindOne(result interface{}, key ...string) (err error)
 	FindMany(result interface{}) (err error)
 	Create(record interface{}) error

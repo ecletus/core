@@ -3,16 +3,49 @@ package resource
 import (
 	"reflect"
 
+	"github.com/pkg/errors"
+
+	"github.com/ecletus/validations"
+
 	"github.com/ecletus/core"
+	"github.com/moisespsena-go/aorm"
 )
 
 // MetaValues is slice of MetaValue
 type MetaValues struct {
 	Values []*MetaValue
+	ByName map[string]int
 }
 
 func (mvs *MetaValues) IsEmpty() bool {
 	return mvs == nil || len(mvs.Values) == 0
+}
+
+func (mvs *MetaValues) IsBlank() bool {
+	if mvs.IsEmpty() {
+		return true
+	}
+	for _, v := range mvs.Values {
+		if v.MetaValues != nil {
+			if !v.MetaValues.IsEmpty() {
+				return false
+			}
+		} else if v.Value != nil {
+			switch t := v.Value.(type) {
+			case []string:
+				for _, v := range t {
+					if v != "" {
+						return false
+					}
+				}
+			default:
+				if !aorm.IsBlank(reflect.ValueOf(v.Value)) {
+					return false
+				}
+			}
+		}
+	}
+	return true
 }
 
 // Get get meta value from MetaValues with name
@@ -23,6 +56,46 @@ func (mvs MetaValues) Get(name string) *MetaValue {
 		}
 	}
 
+	return nil
+}
+
+// Get get meta value from MetaValues with name
+func (mvs MetaValues) GetString(name string) string {
+	for _, mv := range mvs.Values {
+		if mv.Name == name {
+			return mv.FirstStringValue()
+		}
+	}
+
+	return ""
+}
+
+func (this *MetaValues) IsRequirementCheck() bool {
+	if len(this.Values) == 1 && this.Values[0].Meta.IsAlone() {
+		return false
+	}
+	for _, v := range this.Values {
+		if v.Meta != nil && v.Meta.IsSiblingsRequirementCheckDisabled() {
+			s := v.FirstStringValue()
+			return s == "true" || s == "on"
+		}
+	}
+	return true
+}
+
+func (this *MetaValues) CheckRequirement(context *core.Context, metaors ...Metaor) error {
+	if this.IsRequirementCheck() {
+		errors := core.Errors{}
+		for _, metaor := range metaors {
+			name := metaor.GetName()
+			if _, ok := this.ByName[name]; !ok && metaor.IsRequired() {
+				errors.AddError(ErrCantBeBlank(context, metaor.GetBaseResource().GetModelStruct().Value, metaor.GetName(), metaor.GetLabelC(context)))
+			}
+		}
+		if errors.HasError() {
+			return errors
+		}
+	}
 	return nil
 }
 
@@ -38,9 +111,34 @@ type MetaValue struct {
 	error      error
 }
 
+func (this *MetaValue) FirstStringValue() (value string) {
+	if this.Value != nil {
+		value = this.Value.([]string)[0]
+	}
+	return
+}
+
+func (this *MetaValue) FirstInterfaceValue() (value interface{}) {
+	if this.Value != nil {
+		value = this.Value.([]interface{})[0]
+	}
+	return
+}
+
 func decodeMetaValuesToField(res Resourcer, field reflect.Value, metaValue *MetaValue, context *core.Context, merge ...bool) (err error) {
-	//if field.Kind() == reflect.Struct {
+	defer func() {
+		if err != nil {
+			if !validations.IsError(err) {
+				err = errors.Wrap(err, "decode meta values")
+			}
+		}
+	}()
+	// if field.Kind() == reflect.Struct {
 	if metaValue.Meta.IsInline() {
+		var notLoad bool
+		if field := metaValue.Meta.GetFieldStruct(); field != nil && field.TagSettings["-"] == "-" {
+			notLoad = true
+		}
 		typ := field.Type()
 		isPtr := typ.Kind() == reflect.Ptr
 		if isPtr {
@@ -57,9 +155,8 @@ func decodeMetaValuesToField(res Resourcer, field reflect.Value, metaValue *Meta
 			value = reflect.New(typ)
 		}
 		valueInterface := value.Interface()
-		associationProcessor := DecodeToResource(res, valueInterface, metaValue.MetaValues, context)
-		err = associationProcessor.Start()
-		if err != nil {
+		associationProcessor := DecodeToResource(res, valueInterface, metaValue.MetaValues, context, notLoad)
+		if err = associationProcessor.Start(); err != nil {
 			return
 		}
 		if !associationProcessor.SkipLeft {
@@ -83,8 +180,7 @@ func decodeMetaValuesToField(res Resourcer, field reflect.Value, metaValue *Meta
 
 		value := reflect.New(fieldType)
 		associationProcessor := DecodeToResource(res, value.Interface(), metaValue.MetaValues, context)
-		err = associationProcessor.Start()
-		if err != nil {
+		if err = associationProcessor.Start(); err != nil {
 			return
 		}
 		if !associationProcessor.SkipLeft {

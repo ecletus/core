@@ -3,13 +3,12 @@ package db
 import (
 	"context"
 	"fmt"
+	"github.com/ecletus/core/db/dbconfig"
 	"os"
 	"os/exec"
-
-	"github.com/ecletus/core/config"
 )
 
-func PostgreSQLRawFactory(ctx context.Context, config *config.DBConfig) (db RawDBConnection, err error) {
+func PostgreSQLRawFactory(ctx context.Context, config *dbconfig.DBConfig) (db RawDBConnection, err error) {
 	var cmd *exec.Cmd
 	if ctx == nil {
 		cmd = exec.Command("psql")
@@ -19,7 +18,7 @@ func PostgreSQLRawFactory(ctx context.Context, config *config.DBConfig) (db RawD
 	cmd.Env = os.Environ()
 	cmd.Env = append(cmd.Env,
 		fmt.Sprintf("PGUSER=%v", config.User),
-		fmt.Sprintf("PGPASS=%v", config.Password),
+		fmt.Sprintf("PGPASSWORD=%v", config.Password),
 		fmt.Sprintf("PGDATABASE=%v", config.Name))
 	if config.Host != "" {
 		cmd.Env = append(cmd.Env, fmt.Sprintf("PGHOST=%v", config.Host))
@@ -35,7 +34,7 @@ func PostgreSQLRawFactory(ctx context.Context, config *config.DBConfig) (db RawD
 	return con, nil
 }
 
-func Sqlite3RawFactory(ctx context.Context, config *config.DBConfig) (db RawDBConnection, err error) {
+func Sqlite3RawFactory(ctx context.Context, config *dbconfig.DBConfig) (db RawDBConnection, err error) {
 	var cmd *exec.Cmd
 	if ctx == nil {
 		cmd = exec.Command("sqlite3", config.Name)

@@ -1,0 +1,2 @@
+errors:
+  cant_be_blank: "<b>%s</b> não pode ser vazio"

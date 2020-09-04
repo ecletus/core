@@ -11,19 +11,19 @@ import (
 	"reflect"
 	"regexp"
 	"runtime"
-	"runtime/debug"
+	"strings"
+	"sync"
 	"time"
 
 	"go4.org/sort"
 
-	"github.com/ecletus/core"
 	"github.com/ecletus/helpers"
 	"github.com/gosimple/slug"
 	"github.com/jinzhu/now"
 	"github.com/microcosm-cc/bluemonday"
-	"github.com/moisespsena-go/aorm"
 
-	"strings"
+	"github.com/ecletus/core"
+	"github.com/moisespsena-go/aorm"
 
 	"github.com/moisespsena/template/html/template"
 )
@@ -95,16 +95,54 @@ func isUppercase(char byte) bool {
 	return 'A' <= char && char <= 'Z'
 }
 
-var asicsiiRegexp = regexp.MustCompile("^(\\w|\\s|-|!)*$")
+var asicsiiRegexp = regexp.MustCompile(`^(\w|\s|-|/!)*$`)
+
+type safeMap struct {
+	m map[string]string
+	l *sync.RWMutex
+}
+
+func (s *safeMap) Set(key string, value string) {
+	s.l.Lock()
+	defer s.l.Unlock()
+	s.m[key] = value
+}
+
+func (s *safeMap) Get(key string) string {
+	s.l.RLock()
+	defer s.l.RUnlock()
+	return s.m[key]
+}
+
+func newSafeMap() *safeMap {
+	return &safeMap{l: new(sync.RWMutex), m: make(map[string]string)}
+}
+
+var paramSnb = aorm.NewSafeNameBuilder(newSafeMap())
+
+func init() {
+	paramSnb.PreFormat = func(v string) string {
+		return strings.Replace(v, " ", "_", -1)
+	}
+}
+
+func ToUri(value string) string {
+	value = path.Clean(value)
+	return paramSnb.BuildParts(value, "/")
+}
 
 // ToParamString replaces spaces and separates words (by uppercase letters) with
 // underscores in a string, also downcase it
 // e.g. ToParamString -> to_param_string, To ParamString -> to_param_string
-func ToParamString(str string) string {
+func ToParamString(str string) (r string) {
 	if asicsiiRegexp.MatchString(str) {
-		return aorm.ToDBName(strings.Replace(str, " ", "_", -1))
+		return paramSnb.BuildParts(str, "/")
 	}
-	return slug.Make(str)
+	parts := strings.Split(str, "/")
+	for i := range parts {
+		parts[i] = slug.Make(parts[i])
+	}
+	return strings.Join(parts, "/")
 }
 
 // SetCookie set cookie for context
@@ -118,7 +156,7 @@ func SetCookie(cookie http.Cookie, context *core.Context) {
 
 	// set default path
 	if cookie.Path == "" {
-		cookie.Path = context.Root().GenURL()
+		cookie.Path = context.Root().Path()
 	}
 
 	http.SetCookie(context.Writer, &cookie)
@@ -137,31 +175,31 @@ func Stringify(object interface{}) string {
 	if obj, ok := object.(fmt.Stringer); ok {
 		return obj.String()
 	}
-
-	scope := aorm.Scope{Value: object}
-	for _, column := range []string{"Name", "Title", "Code"} {
-		if field, ok := scope.FieldByName(column); ok {
-			if field.Field.IsValid() {
-				result := field.Field.Interface()
-				if valuer, ok := result.(driver.Valuer); ok {
-					if result, err := valuer.Value(); err == nil {
-						return fmt.Sprint(result)
+	if reflect.Indirect(reflect.ValueOf(object)).Kind() == reflect.Struct {
+		instance := aorm.InstanceOf(object)
+		for _, column := range []string{"Name", "Title", "Code"} {
+			if field, ok := instance.FieldByName(column); ok {
+				if field.Field.IsValid() {
+					result := field.Field.Interface()
+					if valuer, ok := result.(driver.Valuer); ok {
+						if result, err := valuer.Value(); err == nil {
+							return fmt.Sprint(result)
+						}
 					}
+					return fmt.Sprint(result)
 				}
-				return fmt.Sprint(result)
+				return ""
 			}
-			return ""
+		}
+
+		if pk := instance.ID(); pk != nil {
+			if pk.IsZero() {
+				return ""
+			}
+			return fmt.Sprintf("%v#%v", instance.Struct.Type.Name(), pk)
 		}
 	}
-
-	if scope.PrimaryField() != nil {
-		if scope.PrimaryKeyZero() {
-			return ""
-		}
-		return fmt.Sprintf("%v#%v", scope.GetModelStruct().ModelType.Name(), scope.PrimaryKeyValue())
-	}
-
-	return fmt.Sprint(reflect.Indirect(reflect.ValueOf(object)).Interface())
+	return fmt.Sprint(object)
 }
 
 // StringifyContext stringify any data, if it is a struct, will try to use its Name, Title, Code field, else will use its primary key
@@ -190,7 +228,7 @@ func HtmlifyContext(value interface{}, ctx *core.Context) template.HTML {
 	}
 }
 
-// ModelType get value's model type
+// Type get value's model type
 func ModelType(value interface{}) reflect.Type {
 	reflectType := reflect.Indirect(reflect.ValueOf(value)).Type()
 
@@ -215,12 +253,6 @@ func ParseTagOption(str string) map[string]string {
 		}
 	}
 	return setting
-}
-
-// ExitWithMsg debug error messages and print stack
-func ExitWithMsg(msg interface{}, value ...interface{}) {
-	fmt.Fprintf(os.Stderr, "\n"+filenameWithLineNum()+"\n"+fmt.Sprint(msg)+"\n", value...)
-	debug.PrintStack()
 }
 
 // FileServer file server that disabled file listing
@@ -291,11 +323,11 @@ var ParseTime = func(timeStr string, context *core.Context) (time.Time, error) {
 
 // FormatTime format time to string
 // Overwrite the default logic with
-//     utils.FormatTime = func(time time.Time, format string, context *qor.Context) string {
+//     utils.FormatTime = func(time time.Time, layout string, context *qor.Context) string {
 //         // ....
 //     }
-var FormatTime = func(date time.Time, format string, context *core.Context) string {
-	return date.Format(format)
+var FormatTime = func(date time.Time, layout string, context *core.Context) string {
+	return date.Format(layout)
 }
 
 var replaceIdxRegexp = regexp.MustCompile(`\[\d+\]`)
@@ -347,7 +379,7 @@ func GetAbsURL(req *http.Request) url.URL {
 		return *req.URL
 	}
 
-	if domain := req.Header.Get("Origin"); domain != "" {
+	if domain := req.Host; domain != "" {
 		parseResult, _ := url.Parse(domain)
 		result = *parseResult
 	}
@@ -405,9 +437,19 @@ func IndirectType(v interface{}) (typ reflect.Type) {
 	return
 }
 
-func StringOrEmpty(value interface{}) string {
-	if str, ok := value.(string); ok {
-		return str
+func StructType(v interface{}) (typ reflect.Type) {
+	switch vt := v.(type) {
+	case reflect.Value:
+		typ = vt.Type()
+	case *reflect.Value:
+		typ = vt.Type()
+	case reflect.Type:
+		typ = vt
+	default:
+		typ = reflect.ValueOf(vt).Type()
 	}
-	return ""
+	for typ.Kind() != reflect.Struct {
+		typ = typ.Elem()
+	}
+	return
 }

@@ -15,27 +15,38 @@ import (
 var ErrProcessorSkipLeft = errors.New("resource: skip left")
 
 type processor struct {
-	Result     interface{}
-	Resource   Resourcer
-	Context    *core.Context
-	MetaValues *MetaValues
-	SkipLeft   bool
-	newRecord  bool
+	defaultDenyMode bool
+	Result          interface{}
+	Resource        Resourcer
+	Context         *core.Context
+	MetaValues      *MetaValues
+	SkipLeft        bool
+	newRecord       bool
+	notLoad         bool
 }
 
 // DecodeToResource decode meta values to resource result
-func DecodeToResource(res Resourcer, result interface{}, metaValues *MetaValues, context *core.Context) *processor {
+func DecodeToResource(res Resourcer, result interface{}, metaValues *MetaValues, context *core.Context, notLoad ...bool) *processor {
 	if !metaValues.IsEmpty() && metaValues.Values[0].Parent.Meta == nil {
 		metaValues.Values[0].Parent.Meta = &Meta{Resource: res}
 	}
-	scope := &aorm.Scope{Value: result}
-	return &processor{
-		Resource:   res,
-		Result:     result,
-		Context:    context,
-		MetaValues: metaValues,
-		newRecord:  scope.PrimaryKeyZero(),
+	if len(notLoad) == 0 {
+		notLoad = append(notLoad, false)
 	}
+	p := &processor{
+		defaultDenyMode: res.DefaultDenyMode(),
+		Resource:        res,
+		Result:          result,
+		Context:         context,
+		MetaValues:      metaValues,
+		notLoad:         notLoad[0],
+	}
+	if res.GetModelStruct().Parent == nil {
+		p.newRecord = aorm.ZeroIdOf(result)
+	} else {
+		p.notLoad = true
+	}
+	return p
 }
 
 func (processor *processor) checkSkipLeft(errs ...error) bool {
@@ -53,24 +64,27 @@ func (processor *processor) checkSkipLeft(errs ...error) bool {
 }
 
 func (processor *processor) Initialize() error {
-	err := processor.Resource.Crud(processor.Context).SetMetaValues(processor.MetaValues).FindOne(processor.Result)
-	processor.checkSkipLeft(err)
-	return err
-}
-
-func (processor *processor) Validate() error {
-	var errors core.Errors
-	if processor.checkSkipLeft() {
-		return nil
-	}
-
-	for _, fc := range processor.Resource.GetResource().Validators {
-		if errors.AddError(fc(processor.Result, processor.MetaValues, processor.Context)); !errors.HasError() {
-			if processor.checkSkipLeft(errors.GetErrors()...) {
-				break
+	if !processor.notLoad {
+		if processor.Resource.GetModelStruct().Parent == nil && processor.Resource.HasKey() {
+			err := processor.Resource.Crud(processor.Context).SetMetaValues(processor.MetaValues).FindOne(processor.Result)
+			if !aorm.IsRecordNotFoundError(err) {
+				processor.checkSkipLeft(err)
+				return err
 			}
 		}
 	}
+	return nil
+}
+
+func (processor *processor) Validate() error {
+	if processor.checkSkipLeft() {
+		return nil
+	}
+	var errors core.Errors
+	processor.Resource.GetResource().Validate(processor.Result, processor.MetaValues, processor.Context, func(err error) (stop bool) {
+		errors.AddError(err)
+		return processor.checkSkipLeft(err)
+	})
 	return errors
 }
 
@@ -83,19 +97,28 @@ func (processor *processor) decode() (errors []error) {
 		return
 	}
 
+	var reqCheck = processor.MetaValues.IsRequirementCheck()
+
 	for _, metaValue := range processor.MetaValues.Values {
 		meta := metaValue.Meta
 		if meta == nil {
 			continue
 		}
 
-		if processor.newRecord && !core.HasPermission(meta, roles.Create, processor.Context) {
+		defer processor.Context.MetaTreeStack.WithNamer(func() string {
+			return meta.GetRecordLabelC(processor.Context, processor.Result)
+		}, meta.GetName())()
+
+		if processor.newRecord && !meta.HasPermission(roles.Create, processor.Context).Ok(!processor.defaultDenyMode) {
 			continue
-		} else if !core.HasPermission(meta, roles.Update, processor.Context) {
+		} else if !meta.HasPermission(roles.Update, processor.Context).Ok(!processor.defaultDenyMode) {
 			continue
 		}
 
 		if metaValue.MetaValues != nil && len(metaValue.MetaValues.Values) > 0 {
+			if !meta.IsRequired() && metaValue.MetaValues.IsBlank() {
+				continue
+			}
 			if res := metaValue.Meta.GetResource(); res != nil && !reflect.ValueOf(res).IsNil() {
 				field := reflect.Indirect(reflect.ValueOf(processor.Result)).FieldByName(meta.GetFieldName())
 				if utils.ModelType(field.Addr().Interface()) == utils.ModelType(res.NewStruct(processor.Context.Site)) {
@@ -103,7 +126,6 @@ func (processor *processor) decode() (errors []error) {
 						err := decodeMetaValuesToField(res, field, metaValue, processor.Context)
 						if err != nil {
 							errors = append(errors, err)
-							return
 						}
 						continue
 					}
@@ -115,7 +137,8 @@ func (processor *processor) decode() (errors []error) {
 			err := setter(processor.Result, metaValue, processor.Context)
 			if err != nil {
 				errors = append(errors, err)
-				return
+			} else if reqCheck && meta.IsRequired() && meta.IsZero(processor.Result, meta.GetValuer()(processor.Result, processor.Context)) {
+				errors = append(errors, ErrCantBeBlank(processor.Context, processor.Result, meta.GetName(), meta.GetRecordLabelC(processor.Context, processor.Result)))
 			}
 		}
 	}
@@ -126,8 +149,13 @@ func (processor *processor) decode() (errors []error) {
 func (processor *processor) Commit() error {
 	var errors core.Errors
 	errors.AddError(processor.decode()...)
+
 	if processor.checkSkipLeft(errors.GetErrors()...) {
 		return nil
+	}
+
+	if errors.HasError() {
+		return errors
 	}
 
 	for _, fc := range processor.Resource.GetResource().Processors {

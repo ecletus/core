@@ -6,7 +6,6 @@ import (
 
 	"github.com/gorilla/securecookie"
 	"github.com/gorilla/sessions"
-	"github.com/ecletus/core/contextdata"
 )
 
 type CookiStoreFactory func(context *Context, options *sessions.Options, codecs *CookieCodec) *sessions.CookieStore
@@ -117,33 +116,4 @@ func Setup(options SetupOptions) *SetupConfig {
 		}
 	}
 	return setupConfig
-}
-
-func (s *SetupConfig) IfDev(f func() error) error {
-	if s.IsDev() {
-		return f()
-	}
-	return nil
-}
-
-func (s *SetupConfig) IfProd(f func() error) error {
-	if s.IsProduction() {
-		return f()
-	}
-	return nil
-}
-
-const SETUP_CONFIG = "qor:qor.setupConfig"
-
-func NewCookieStore(context *Context, options *sessions.Options, codecs *CookieCodec) *sessions.CookieStore {
-	config := context.SetupConfig()
-	return config.cookieStoreFactory(context, options, codecs)
-}
-
-func (c *Context) SetupConfig() *SetupConfig {
-	return c.Data().Get(SETUP_CONFIG).(*SetupConfig)
-}
-
-func (c *Context) SetSetupConfig(s *SetupConfig) *contextdata.ContextData {
-	return c.Data().Set(SETUP_CONFIG, s)
 }

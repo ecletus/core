@@ -4,22 +4,18 @@ import (
 	"bufio"
 	"context"
 	"errors"
-	"fmt"
+	"github.com/ecletus/core/db/dbconfig"
 	"io"
 	"os"
 	"os/exec"
-	"reflect"
-	"sync"
 	"time"
 
-	qorconfig "github.com/ecletus/core/config"
 	"github.com/moisespsena-go/aorm"
 	_ "github.com/moisespsena-go/aorm/dialects/mysql"
 	_ "github.com/moisespsena-go/aorm/dialects/postgres"
 	_ "github.com/moisespsena-go/aorm/dialects/sqlite"
 )
 
-var FakeDB = &aorm.DB{}
 
 type RawDBConnection interface {
 	io.Closer
@@ -31,13 +27,13 @@ type RawDBConnection interface {
 }
 
 type CmdDBConnection struct {
-	cmd       *exec.Cmd
-	open      func() (*exec.Cmd, error)
-	in        io.Writer
-	err       *bufio.Reader
-	out       *bufio.Reader
-	closer    func(c *CmdDBConnection) error
-	running   bool
+	cmd     *exec.Cmd
+	open    func() (*exec.Cmd, error)
+	in      io.Writer
+	err     *bufio.Reader
+	out     *bufio.Reader
+	closer  func(c *CmdDBConnection) error
+	running bool
 }
 
 func NewCmdDBConnection(cmd *exec.Cmd, closer func(c *CmdDBConnection) error) *CmdDBConnection {
@@ -98,8 +94,8 @@ func (c *CmdDBConnection) Close() error {
 	return nil
 }
 
-type Factory func(config *qorconfig.DBConfig) (db *aorm.DB, err error)
-type RawFactory func(ctx context.Context, config *qorconfig.DBConfig) (db RawDBConnection, err error)
+type Factory func(config *dbconfig.DBConfig) (db *aorm.DB, err error)
+type RawFactory func(ctx context.Context, config *dbconfig.DBConfig) (db RawDBConnection, err error)
 type Factories map[string]Factory
 type RawFactories map[string]RawFactory
 
@@ -107,7 +103,7 @@ func (f Factories) Register(adapterName string, factory Factory) {
 	f[adapterName] = factory
 }
 
-func (f Factories) Factory(config *qorconfig.DBConfig) (db *aorm.DB, err error) {
+func (f Factories) Factory(config *dbconfig.DBConfig) (db *aorm.DB, err error) {
 	if fc, ok := f[config.Adapter]; ok {
 		db, err = fc(config)
 		if err != nil {
@@ -135,27 +131,3 @@ var SystemRawFactories = RawFactories{
 	"sqlite3":  Sqlite3RawFactory,
 }
 
-type FieldCacher struct {
-	data sync.Map
-}
-
-func (fc *FieldCacher) Get(model interface{}, fieldName string) *aorm.Field {
-	typ := reflect.Indirect(reflect.ValueOf(model)).Type()
-	mi, ok := fc.data.Load(typ)
-	if !ok {
-		mi = &sync.Map{}
-		fc.data.Store(typ, mi)
-	}
-	m := mi.(*sync.Map)
-	fi, ok := m.Load(fieldName)
-	if !ok {
-		fi, ok = FakeDB.NewScope(model).FieldByName(fieldName)
-		if !ok {
-			panic(fmt.Errorf("Invalid field %v.%v.%v", typ.PkgPath(), typ.Name(), fieldName))
-		}
-		m.Store(fieldName, fi)
-	}
-	return fi.(*aorm.Field)
-}
-
-var FieldCache = &FieldCacher{}

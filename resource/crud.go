@@ -9,10 +9,11 @@ import (
 	"github.com/ecletus/roles"
 	"github.com/moisespsena-go/aorm"
 	"github.com/moisespsena-go/edis"
-	"github.com/moisespsena-go/error-wrap"
+	errwrap "github.com/moisespsena-go/error-wrap"
 )
 
 type CRUD struct {
+	DefaultDenyMode bool
 	edis.EventDispatcher
 	dispatchers []edis.EventDispatcherInterface
 	res         Resourcer
@@ -20,83 +21,85 @@ type CRUD struct {
 	metaValues  *MetaValues
 	parent      *CRUD
 	layout      LayoutInterface
+	Chan        interface{}
 	Recorde     interface{}
 }
 
 func NewCrud(res Resourcer, ctx *core.Context) *CRUD {
+	ctx = res.ContextSetup(ctx)
 	return &CRUD{res: res, context: ctx, dispatchers: []edis.EventDispatcherInterface{res}}
 }
 
-func (crud *CRUD) SetDB(DB *aorm.DB) *CRUD {
-	crud.context.SetDB(DB)
-	return crud
+func (this *CRUD) SetDB(DB *aorm.DB) *CRUD {
+	this.context.SetDB(DB)
+	return this
 }
 
-func (crud *CRUD) DB() *aorm.DB {
-	return crud.context.DB
+func (this *CRUD) DB() *aorm.DB {
+	return this.context.DB()
 }
 
-func (crud *CRUD) Resource() Resourcer {
-	return crud.res
+func (this *CRUD) Resource() Resourcer {
+	return this.res
 }
 
-func (crud *CRUD) Context() *core.Context {
-	return crud.context
+func (this *CRUD) Context() *core.Context {
+	return this.context
 }
 
-func (crud *CRUD) Layout() LayoutInterface {
-	return crud.layout
+func (this *CRUD) Layout() LayoutInterface {
+	return this.layout
 }
 
-func (crud *CRUD) Parent() *CRUD {
-	return crud.parent
+func (this *CRUD) Parent() *CRUD {
+	return this.parent
 }
 
-func (crud *CRUD) MetaValues() *MetaValues {
-	return crud.metaValues
+func (this *CRUD) MetaValues() *MetaValues {
+	return this.metaValues
 }
 
-func (crud *CRUD) Dispatchers() []edis.EventDispatcherInterface {
-	return crud.dispatchers
+func (this *CRUD) Dispatchers() []edis.EventDispatcherInterface {
+	return this.dispatchers
 }
 
-func (crud *CRUD) Dispatcher(dis ...edis.EventDispatcherInterface) *CRUD {
-	crud = crud.sub()
+func (this *CRUD) Dispatcher(dis ...edis.EventDispatcherInterface) *CRUD {
+	this = this.sub()
 	for _, dis := range dis {
 		if dis != nil {
-			crud.dispatchers = append(crud.dispatchers, dis)
+			this.dispatchers = append(this.dispatchers, dis)
 		}
 	}
-	return crud
+	return this
 }
 
-func (crud *CRUD) sub() *CRUD {
-	sub := &(*crud)
-	sub.dispatchers = crud.dispatchers[:]
-	sub.parent = crud
+func (this *CRUD) sub() *CRUD {
+	sub := &(*this)
+	sub.dispatchers = this.dispatchers[:]
+	sub.parent = this
 	return sub
 }
 
-func (crud *CRUD) SetLayout(layout interface{}) *CRUD {
+func (this *CRUD) SetLayout(layout interface{}) *CRUD {
 	var l LayoutInterface
 	if layoutName, ok := layout.(string); ok {
-		l = crud.res.GetLayout(layoutName)
+		l = this.res.GetLayout(layoutName)
 	} else {
 		l = layout.(LayoutInterface)
 	}
-	crud = crud.sub()
-	crud.layout = l
-	return crud
+	this = this.sub()
+	this.layout = l
+	return this
 }
 
-func (crud *CRUD) SetLayoutOrDefault(layout interface{}, defaul ...interface{}) *CRUD {
+func (this *CRUD) SetLayoutOrDefault(layout interface{}, defaul ...interface{}) *CRUD {
 	var l LayoutInterface
 	if len(defaul) == 0 {
 		defaul = append(defaul, DEFAULT_LAYOUT)
 	}
 	for _, lt := range append([]interface{}{layout}, defaul...) {
 		if layoutName, ok := lt.(string); ok {
-			l = crud.res.GetLayout(layoutName)
+			l = this.res.GetLayout(layoutName)
 			if l != nil {
 				break
 			}
@@ -105,267 +108,339 @@ func (crud *CRUD) SetLayoutOrDefault(layout interface{}, defaul ...interface{}) 
 			break
 		}
 	}
-	crud = crud.sub()
-	crud.layout = l
-	return crud
+	this = this.sub()
+	this.layout = l
+	return this
 }
 
-func (crud *CRUD) SetContext(ctx *core.Context) *CRUD {
-	crud = crud.sub()
-	crud.context = ctx
-	return crud
+func (this *CRUD) SetContext(ctx *core.Context) *CRUD {
+	this = this.sub()
+	this.context = ctx
+	return this
 }
 
-func (crud *CRUD) SetMetaValues(metaValues *MetaValues) *CRUD {
-	crud = crud.sub()
-	crud.metaValues = metaValues
-	return crud
+func (this *CRUD) SetMetaValues(metaValues *MetaValues) *CRUD {
+	this = this.sub()
+	this.metaValues = metaValues
+	return this
 }
 
-func (crud *CRUD) FindOneLayout(key string, layout ...interface{}) (result interface{}, err error) {
+func (this *CRUD) FindOneLayout(key aorm.ID, layout ...interface{}) (result interface{}, err error) {
 	if len(layout) > 0 {
-		crud = crud.SetLayout(layout[0])
+		this = this.SetLayout(layout[0])
 	}
-	crud = crud.layout.Prepare(crud)
-	slice, recorde := crud.res.NewSliceRecord()
-	crud.context.ResourceID = key
-	if err = crud.FindOne(recorde); err != nil {
+	this = this.layout.Prepare(this)
+	slice, recorde := this.res.NewSliceRecord()
+	if err = this.FindOne(recorde, key); err != nil {
 		return nil, err
 	}
-	result = crud.layout.FormatResult(crud, slice)
+	result = this.layout.FormatResult(this, slice)
 	result = reflect.ValueOf(result).Index(0).Interface()
 	return
 }
 
-func (crud *CRUD) FindManyLayout(layout ...interface{}) (result interface{}, err error) {
+func (this *CRUD) FindManyLayout(layout ...interface{}) (result interface{}, err error) {
 	if len(layout) > 0 {
-		crud = crud.SetLayout(layout[0])
+		this = this.SetLayout(layout[0])
 	}
-	crud = crud.layout.Prepare(crud)
-	slice := crud.res.NewSlicePtr()
-	if err = crud.FindMany(slice); err != nil {
-		return nil, err
+	this = this.layout.Prepare(this)
+	if this.Chan == nil {
+		slice := this.res.NewSlicePtr()
+		if err = this.FindMany(slice); err != nil {
+			return nil, err
+		}
+		result = this.layout.FormatResult(this, slice)
+		return result, nil
+	} else {
+		err = this.FindMany(this.Chan)
+		return
 	}
-	result = crud.layout.FormatResult(crud, slice)
-	return result, nil
 }
 
-func (crud *CRUD) FindManyLayoutOrDefault(layout interface{}, defaul ...interface{}) (interface{}, error) {
-	return crud.SetLayoutOrDefault(layout, defaul...).FindManyLayout()
+func (this *CRUD) FindManyLayoutOrDefault(layout interface{}, defaul ...interface{}) (interface{}, error) {
+	return this.SetLayoutOrDefault(layout, defaul...).FindManyLayout()
 }
 
-func (crud *CRUD) FindManyBasic() (result []BasicValue, err error) {
+func (this *CRUD) FindManyBasic() (result []BasicValuer, err error) {
 	var resultInterface interface{}
-	if resultInterface, err = crud.FindManyLayout(BASIC_LAYOUT); err != nil {
+	if resultInterface, err = this.FindManyLayout(BASIC_LAYOUT); err != nil {
 		return nil, err
 	}
-	return resultInterface.([]BasicValue), nil
+	return resultInterface.([]BasicValuer), nil
 }
 
-func (crud *CRUD) FindOneBasic(key string) (result BasicValue, err error) {
-	resultInterface, err := crud.FindOneLayout(key, BASIC_LAYOUT)
+func (this *CRUD) FindOneBasic(key aorm.ID) (result BasicValuer, err error) {
+	resultInterface, err := this.FindOneLayout(key, BASIC_LAYOUT)
 	if err != nil {
 		return nil, err
 	}
-	return resultInterface.(BasicValue), nil
+	return resultInterface.(BasicValuer), nil
 }
 
-func (crud *CRUD) FindOne(result interface{}, key ...string) (err error) {
-	context := crud.context.Clone()
+func (this *CRUD) FindOne(result interface{}, key ...aorm.ID) (err error) {
 	var (
+		context         = this.context.Clone()
 		primaryQuerySQL string
 		primaryParams   []interface{}
+		DB              = context.DB()
 	)
 
-	if len(key) > 0 && key[0] != "" {
-		primaryQuerySQL, primaryParams = StringToPrimaryQuery(crud.res, key[0])
-	} else if crud.metaValues == nil {
-		primaryQuerySQL, primaryParams = StringToPrimaryQuery(crud.res, context.ResourceID)
-	} else {
-		primaryQuerySQL, primaryParams = MetaValuesToPrimaryQuery(crud.res, crud.metaValues)
+	var hasKey bool
 
-		if len(primaryParams) == 1 {
-			if s, ok := primaryParams[0].(string); ok {
-				if s == "" {
-					return nil
-				}
-			} else if s, ok := primaryParams[0].(int64); ok {
-				if s == 0 {
-					return nil
+	if this.res.HasKey() {
+		if len(key) > 0 && key[0] != nil {
+			if primaryQuerySQL, primaryParams, err = IdToPrimaryQuery(this.context, this.res, false, key[0]); err != nil {
+				return
+			}
+		} else if this.metaValues == nil {
+			if !context.ResourceID.IsZero() {
+				if primaryQuerySQL, primaryParams, err = IdToPrimaryQuery(this.context, this.res, false, context.ResourceID); err != nil {
+					return
 				}
 			}
+		} else if primaryQuerySQL, primaryParams, err = MetaValuesToPrimaryQuery(this.context, this.res, this.metaValues, false); err != nil {
+			return
+		}
+		if primaryQuerySQL != "" {
+			if this.metaValues != nil {
+				if destroy := this.metaValues.Get("_destroy"); destroy != nil {
+					if fmt.Sprint(destroy.Value) != "0" && this.res.HasPermission(roles.Delete, context).Ok(!this.DefaultDenyMode) {
+						DB.Delete(result, append([]interface{}{primaryQuerySQL}, primaryParams...)...)
+						return ErrProcessorSkipLeft
+					}
+				}
+			}
+			hasKey = true
 		}
 	}
-	if primaryQuerySQL != "" {
-		if crud.metaValues != nil {
-			if destroy := crud.metaValues.Get("_destroy"); destroy != nil {
-				if fmt.Sprint(destroy.Value) != "0" && core.HasPermission(crud.res, roles.Delete, context) {
-					context.DB.Delete(result, append([]interface{}{primaryQuerySQL}, primaryParams...)...)
-					return ErrProcessorSkipLeft
-				}
-			}
-		}
 
+	if hasKey {
 		e := NewDBEvent(E_DB_ACTION_FIND_ONE, context)
 		e.SetResult(result)
 
-		if err = crud.triggerDBAction(e.before()); err != nil {
+		if err = this.triggerDBAction(e.before()); err != nil {
 			return
 		}
 
-		if err = context.DB.First(result, append([]interface{}{primaryQuerySQL}, primaryParams...)...).Error; err != nil {
-			crud.triggerDBAction(e.error(err))
-			return err
+		DB = context.DB()
+		if err = DB.First(result, append([]interface{}{primaryQuerySQL}, primaryParams...)...).Error; err != nil {
+			this.triggerDBAction(e.error(err))
+			return
+		}
+		err = this.triggerDBAction(e.after())
+	} else if !this.res.HasKey() {
+		e := NewDBEvent(E_DB_ACTION_FIND_ONE, context)
+		e.SetResult(result)
+
+		if err = this.triggerDBAction(e.before()); err != nil {
+			return
 		}
 
-		err = crud.triggerDBAction(e.after())
+		DB = context.DB()
+		if err = DB.First(result).Error; err != nil {
+			this.triggerDBAction(e.error(err))
+			return
+		}
+		err = this.triggerDBAction(e.after())
+	} else {
+		return errors.New("failed to find: no key found")
+	}
+
+	return
+}
+
+func (this *CRUD) Count(result interface{}) (err error) {
+	var (
+		context = this.context.Clone()
+		e       *DBEvent
+	)
+	e = NewDBEvent(E_DB_ACTION_COUNT, context.Clone())
+	e.SetResult(result)
+	if err = this.triggerDBAction(e.before()); err != nil {
+		return err
+	}
+	if err = e.Context.DB().Count(result).Error; err != nil {
+		this.triggerDBAction(e.error(err))
 		return err
 	}
 
-	return errors.New("failed to find")
+	err = this.triggerDBAction(e.after())
+	return err
 }
 
-func (crud *CRUD) FindMany(result interface{}) (err error) {
+func (this *CRUD) FindMany(result interface{}) (err error) {
 	var (
-		context = crud.context.Clone()
+		context = this.context.Clone()
 		e       *DBEvent
 	)
 
-	if _, ok := context.DB.Get("qor:getting_total_count"); ok {
+	if len(context.ExcludeResourceID) > 0 {
+		context.SetRawDB(context.DB().Where(aorm.InID(context.ExcludeResourceID...).Exclude()))
+	}
+
+	if _, ok := context.DB().Get("qor:getting_total_count"); ok {
 		e = NewDBEvent(E_DB_ACTION_COUNT, context.Clone())
 		e.SetResult(result)
-		if err = crud.triggerDBAction(e.before()); err != nil {
+		if err = this.triggerDBAction(e.before()); err != nil {
 			return err
 		}
-		if err = e.Context.DB.Count(result).Error; err != nil {
-			crud.triggerDBAction(e.error(err))
+		if err = context.DB().Count(result).Error; err != nil {
+			this.triggerDBAction(e.error(err))
 			return err
 		}
 
-		err = crud.triggerDBAction(e.after())
+		err = this.triggerDBAction(e.after())
 		return err
 	}
 
 	e = NewDBEvent(E_DB_ACTION_FIND_MANY, context)
 	e.SetResult(result)
 
-	if err = crud.triggerDBAction(e.before()); err != nil {
+	if err = this.triggerDBAction(e.before()); err != nil {
+		return err
+	}
+	DB := e.Context.DB()
+	if !DB.HasOrder() {
+		DB = DB.Set("gorm:order_by_primary_key", "DESC")
+	}
+
+	if err = DB.Find(result).Error; err != nil {
+		this.triggerDBAction(e.error(err))
 		return err
 	}
 
-	if !context.DB.HasOrder() {
-		context.DB = context.DB.Set("gorm:order_by_primary_key", "DESC")
-	}
-
-	if err = context.DB.Find(result).Error; err != nil {
-		crud.triggerDBAction(e.error(err))
-		return err
-	}
-
-	err = crud.triggerDBAction(e.after())
+	err = this.triggerDBAction(e.after())
 	return err
 }
 
-func (crud *CRUD) Create(record interface{}) error {
-	if crud.context.GetDB().NewScope(record).PrimaryKeyZero() &&
-		core.HasPermission(crud.res, roles.Create, crud.context) {
-		return crud.CallCreate(record)
+func (this *CRUD) Create(record interface{}) error {
+	if this.HasPermission(roles.Create) {
+		return this.CallCreate(record)
 	}
 	return roles.ErrPermissionDenied
 }
 
-func (crud *CRUD) CallCreate(record interface{}) (err error) {
-	return crud.callSave(record, E_DB_ACTION_CREATE)
+func (this *CRUD) CallCreate(record interface{}) (err error) {
+	return this.callSave(record, E_DB_ACTION_CREATE)
 }
 
-func (crud *CRUD) Update(record interface{}) error {
-	if !crud.context.GetDB().NewScope(record).PrimaryKeyZero() &&
-		core.HasPermission(crud.res, roles.Update, crud.context) {
-		return crud.CallUpdate(record)
-	}
-	return roles.ErrPermissionDenied
-}
-
-func (crud *CRUD) CallUpdate(recorde interface{}) (err error) {
-	return crud.callSave(recorde, E_DB_ACTION_SAVE)
-}
-
-func (crud *CRUD) SaveOrCreate(recorde interface{}) error {
-	if crud.context.GetDB().NewScope(recorde).PrimaryKeyZero() {
-		if core.HasPermission(crud.res, roles.Create, crud.context) {
-			return crud.CallCreate(recorde)
+func (this *CRUD) Update(record interface{}, old ...interface{}) error {
+	if this.HasPermission(roles.Update) {
+		if this.Resource().IsSingleton() || !aorm.ZeroIdOf(record) {
+			return this.CallUpdate(record, old...)
 		}
-	} else if core.HasPermission(crud.res, roles.Update, crud.context) {
-		return crud.CallUpdate(recorde)
+		return errors.New("BID not set")
 	}
 	return roles.ErrPermissionDenied
 }
 
-func (crud *CRUD) callSave(recorde interface{}, eventName DBActionEvent) (err error) {
-	defer crud.recorde(recorde)()
-	var context = crud.context.Clone()
+func (this *CRUD) CallUpdate(recorde interface{}, old ...interface{}) (err error) {
+	return this.callSave(recorde, E_DB_ACTION_UPDATE, old...)
+}
 
-	e := NewDBEvent(eventName, context)
+func (this *CRUD) SaveOrCreate(recorde interface{}) error {
+	if aorm.ZeroIdOf(recorde) {
+		if this.HasPermission(roles.Create) {
+			return this.CallCreate(recorde)
+		}
+	} else if this.HasPermission(roles.Update) {
+		return this.CallUpdate(recorde)
+	}
+	return roles.ErrPermissionDenied
+}
+
+func (this *CRUD) callSave(recorde interface{}, eventName DBActionEvent, old ...interface{}) (err error) {
+	defer this.recorde(recorde)()
+	var (
+		context = this.context.Clone()
+		e       = NewDBEvent(eventName, context)
+		DB      = context.DB()
+	)
+
 	e.SetResult(recorde)
 
-	if err = crud.triggerDBAction(e.before()); err != nil {
+	for _, e.old = range old {
+	}
+
+	if err = this.triggerDBAction(e.before()); err != nil {
 		return
 	}
 
-	if err = crud.triggerDBAction(e); err != nil {
+	if err = this.triggerDBAction(e); err != nil {
 		return
 	}
 
-	if err = context.DB.Save(recorde).Error; err != nil {
-		crud.triggerDBAction(e.error(err))
+	DB = e.Context.DB()
+	if eventName == E_DB_ACTION_CREATE {
+		err = DB.Create(recorde).Error
+	} else if len(old) > 0 && old[0] != nil {
+		//.Where(old[0])
+		db := DB.Model(recorde).Opt(aorm.OptStoreBlankField())
+		err = db.Update(recorde).Error
+	} else {
+		err = DB.Save(recorde).Error
 	}
 
-	err = crud.triggerDBAction(e.after())
+	if err != nil {
+		if d := aorm.GetDuplicateUniqueIndexError(err); d != nil {
+			return DuplicateUniqueIndexError{d, recorde, this.res}
+		}
+		this.triggerDBAction(e.error(err))
+		return
+	}
+
+	err = this.triggerDBAction(e.after())
 	return
 }
 
-func (crud *CRUD) CallDelete(recorde interface{}) (err error) {
-	defer crud.recorde(recorde)()
-	if primaryQuerySQL, primaryParams := StringToPrimaryQuery(crud.res, crud.context.ResourceID); primaryQuerySQL != "" {
-		db := crud.context.GetDB()
+func (this *CRUD) CallDelete(recorde interface{}) (err error) {
+	var (
+		primaryQuerySQL string
+		primaryParams   []interface{}
+	)
+	defer this.recorde(recorde)()
+	if primaryQuerySQL, primaryParams, err = IdToPrimaryQuery(this.context, this.res, false, this.context.ResourceID); err != nil {
+		return
+	} else {
+		db := this.context.DB()
 		db = db.First(recorde, append([]interface{}{primaryQuerySQL}, primaryParams...)...)
 		if !db.RecordNotFound() {
-			e := NewDBEvent(E_DB_ACTION_DELETE, crud.context)
+			e := NewDBEvent(E_DB_ACTION_DELETE, this.context)
 			e.SetResult(recorde)
 
-			if err = crud.triggerDBAction(e.before()); err != nil {
+			if err = this.triggerDBAction(e.before()); err != nil {
 				return
 			}
 
-			if err = crud.triggerDBAction(e); err != nil {
+			if err = this.triggerDBAction(e); err != nil {
 				return
 			}
 
 			if err = db.Delete(recorde).Error; err != nil {
-				crud.triggerDBAction(e.error(err))
+				this.triggerDBAction(e.error(err))
 			}
 
-			err = crud.triggerDBAction(e.after())
+			err = this.triggerDBAction(e.after())
 		}
 		return
 	}
 	return aorm.ErrRecordNotFound
 }
 
-func (crud *CRUD) Delete(record interface{}) (err error) {
-	if core.HasPermission(crud.res, roles.Delete, crud.context) {
-		return crud.CallDelete(record)
+func (this *CRUD) Delete(record interface{}) (err error) {
+	if this.HasPermission(roles.Delete) {
+		return this.CallDelete(record)
 	}
 	return roles.ErrPermissionDenied
 }
 
-func (crud *CRUD) triggerDBAction(e *DBEvent) (err error) {
-	e.Crud = crud
-	if err = crud.Trigger(e); err != nil {
+func (this *CRUD) triggerDBAction(e *DBEvent) (err error) {
+	e.Crud = this
+	if err = this.Trigger(e); err != nil {
 		return err
 	}
 
-	for i, d := range crud.dispatchers {
+	for i, d := range this.dispatchers {
 		if err = d.Trigger(e); err != nil {
 			return errwrap.Wrap(err, "Dispatcher %d", i)
 		}
@@ -373,10 +448,14 @@ func (crud *CRUD) triggerDBAction(e *DBEvent) (err error) {
 	return nil
 }
 
-func (crud *CRUD) recorde(r interface{}) func() {
-	old := crud.Recorde
-	crud.Recorde = r
+func (this *CRUD) recorde(r interface{}) func() {
+	old := this.Recorde
+	this.Recorde = r
 	return func() {
-		crud.Recorde = old
+		this.Recorde = old
 	}
+}
+
+func (this *CRUD) HasPermission(mode roles.PermissionMode) bool {
+	return this.res.HasPermission(mode, this.context).Ok(!this.DefaultDenyMode)
 }

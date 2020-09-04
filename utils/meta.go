@@ -47,24 +47,29 @@ func ToArray(value interface{}) (values []string) {
 
 // ToString get string from value, if passed value is a slice, will use the first element
 func ToString(value interface{}) string {
-	if v, ok := value.([]string); ok {
+	switch v := value.(type) {
+	case []string:
 		for _, s := range v {
 			if s != "" {
 				return s
 			}
 		}
 		return ""
-	} else if v, ok := value.(string); ok {
+	case string:
 		return v
-	} else if v, ok := value.([]interface{}); ok {
+	case *string:
+		return *v
+	case []interface{}:
 		for _, s := range v {
 			if fmt.Sprint(s) != "" {
 				return fmt.Sprint(s)
 			}
 		}
 		return ""
+	default:
+		return fmt.Sprintf("%v", value)
 	}
-	return fmt.Sprintf("%v", value)
+
 }
 
 // ToInt get int from value, if passed value is empty string, result will be 0
@@ -97,5 +102,19 @@ func ToFloat(value interface{}) float64 {
 		return i
 	} else {
 		panic("failed to parse float: " + result)
+	}
+}
+
+func SetZero(rvalue reflect.Value) {
+	rvalue.Set(reflect.Zero(rvalue.Type()))
+}
+
+func SetNonZero(rvalue reflect.Value, value interface{}) {
+	if rvalue.Kind() == reflect.Ptr {
+		newValue := reflect.New(rvalue.Type().Elem())
+		newValue.Elem().Set(reflect.ValueOf(value))
+		rvalue.Set(newValue)
+	} else {
+		rvalue.Set(reflect.ValueOf(value).Convert(rvalue.Type()))
 	}
 }

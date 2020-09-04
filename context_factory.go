@@ -3,18 +3,31 @@ package core
 import (
 	"context"
 	"net/http"
+	"net/url"
 
-	"github.com/ecletus/core/config"
-	"github.com/moisespsena-go/xroute"
+	"github.com/moisespsena-go/httpu"
 	"github.com/moisespsena-go/i18n-modular/i18nmod"
+	"github.com/moisespsena-go/xroute"
 )
 
 type ContextFactory struct {
 	Translator *i18nmod.Translator
+	afterCreateCallbacks []func(ctx *Context)
 }
 
 func NewContextFactory(translator *i18nmod.Translator) *ContextFactory {
-	return &ContextFactory{translator}
+	return &ContextFactory{Translator: translator}
+}
+
+func (cf *ContextFactory) AfterCreate(f ...func(ctx *Context)) {
+	cf.afterCreateCallbacks = append(cf.afterCreateCallbacks, f...)
+}
+
+func (cf *ContextFactory) NewSiteContext(site *Site) *Context {
+	ctx := site.NewContext()
+	ctx.Translator = cf.Translator
+	ctx.DefaultLocale = cf.Translator.DefaultLocale
+	return ctx
 }
 
 func (cf *ContextFactory) NewContextForRequest(req *http.Request, prefix ...string) (*http.Request, *Context) {
@@ -23,19 +36,21 @@ func (cf *ContextFactory) NewContextForRequest(req *http.Request, prefix ...stri
 
 	var ctx *Context
 
-	URL := *req.URL
-	URL.Path = req.RequestURI
+	URL, _ := url.ParseRequestURI(req.RequestURI)
+
+	if URL.Scheme = req.URL.Scheme; URL.Scheme != "" {
+		URL.Host = req.Host
+	}
 
 	if parent == nil {
 		ctx = &Context{
 			ContextFactory: cf,
-			Config:         config.NewConfig(),
-			Request:        req,
-			OriginalURL:    &URL,
+			OriginalURL:    URL,
 			StaticURL:      stringOrDefault(rctx.Value("STATIC_URL")),
 			Translator:     cf.Translator,
 			DefaultLocale:  cf.Translator.DefaultLocale,
 		}
+		ctx.SetRequest(req)
 		ctx.AsTop()
 		if len(prefix) > 0 && prefix[0] != "" {
 			req, ctx = ctx.NewChild(req, prefix...)
@@ -49,12 +64,17 @@ func (cf *ContextFactory) NewContextForRequest(req *http.Request, prefix ...stri
 		req, ctx.RouteContext = xroute.GetOrNewRouteContextForRequest(req)
 	}
 	ctx.Request = req
+
+	for _, f := range cf.afterCreateCallbacks {
+		f(ctx)
+	}
+
 	return req, ctx
 }
 
 func (cf *ContextFactory) NewContextFromRequestPair(w http.ResponseWriter, r *http.Request, prefix ...string) (*http.Request, *Context) {
 	r, ctx := cf.NewContextForRequest(r, prefix...)
-	ctx.Writer = w
+	ctx.Writer = httpu.ResponseWriterOf(w)
 	return r, ctx
 }
 

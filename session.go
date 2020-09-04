@@ -1,20 +1,28 @@
 package core
 
 import (
+	"context"
+
 	"github.com/ecletus/session"
 )
 
 const sessionManagerKey = "qor:session_manager"
 
-func (context *Context) SessionManager() session.RequestSessionManager {
-	v := context.Data().Get(sessionManagerKey)
-	if v == nil {
-		return nil
-	}
-	return v.(session.RequestSessionManager)
+func (this *Context) SessionManager() session.RequestSessionManager {
+	return GetSessionManager(this)
 }
 
-func (context *Context) SetSessionManager(manager session.RequestSessionManager) *Context {
-	context.Data().Set(sessionManagerKey, manager)
-	return context
+func (this *Context) SetSessionManager(manager session.RequestSessionManager) *Context {
+	return this.SetValue(sessionManagerKey, manager)
+}
+
+func GetSessionManager(ctx context.Context) session.RequestSessionManager {
+	if sm := ctx.Value(sessionManagerKey); sm != nil {
+		return sm.(session.RequestSessionManager)
+	}
+	return nil
+}
+
+func SetSessionManager(parent context.Context, sm session.RequestSessionManager) context.Context {
+	return context.WithValue(parent, sessionManagerKey, sm)
 }
