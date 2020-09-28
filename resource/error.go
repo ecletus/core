@@ -34,6 +34,10 @@ func ErrCantBeBlank(ctx *core.Context, record interface{}, fieldName string, lab
 	return validations.NewError(record, fieldName, fmt.Sprintf(ctx.ErrorTS(core.ErrCantBeBlank), label[0]))
 }
 
+func ErrMetaCantBeBlank(context *core.Context, metaor Metaor) error {
+	return ErrCantBeBlank(context, metaor.GetBaseResource().GetModelStruct().Value, metaor.GetName(), metaor.GetLabelC(context))
+}
+
 func ErrField(ctx *core.Context, record interface{}, fieldName string, label ...string) func(err interface{}) error {
 	if len(label) == 0 {
 		label = append(label, utils.HumanizeString(fieldName))

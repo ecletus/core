@@ -6,6 +6,12 @@ type Permissioner interface {
 	HasPermission(mode roles.PermissionMode, ctx *Context) roles.Perm
 }
 
+func RolePermissioner(permissioner roles.Permissioner) Permissioner {
+	return NewPermissioner(func(mode roles.PermissionMode, ctx *Context) (perm roles.Perm) {
+		return permissioner.HasPermission(ctx, mode, ctx.Roles.Interfaces()...)
+	})
+}
+
 type PermissionerFunc func(mode roles.PermissionMode, ctx *Context) roles.Perm
 
 func (f PermissionerFunc) HasPermission(mode roles.PermissionMode, ctx *Context) roles.Perm {
@@ -44,6 +50,25 @@ func (this permissioners) HasPermission(mode roles.PermissionMode, ctx *Context)
 		}
 	}
 	return
+}
+
+type allowedPermissioners []Permissioner
+
+func (this allowedPermissioners) HasPermission(mode roles.PermissionMode, ctx *Context) (perm roles.Perm) {
+	for _, p := range this {
+		if !p.HasPermission(mode, ctx).Allow() {
+			return roles.DENY
+		}
+	}
+	return roles.ALLOW
+}
+
+func AllowedPermissioners(p ...Permissioner) Permissioner {
+	permr := Permissioners(p...)
+	if items, ok := permr.(permissioners); ok {
+		return allowedPermissioners(items)
+	}
+	return permr
 }
 
 type ContextPermissioner interface {

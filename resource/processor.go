@@ -5,9 +5,10 @@ import (
 	"errors"
 	"reflect"
 
+	"github.com/ecletus/roles"
+
 	"github.com/ecletus/core"
 	"github.com/ecletus/core/utils"
-	"github.com/ecletus/roles"
 	"github.com/moisespsena-go/aorm"
 )
 
@@ -97,6 +98,14 @@ func (processor *processor) decode() (errors []error) {
 		return
 	}
 
+	if bc, ok := processor.Resource.(ResourcerMetaValuesBeforeCommiter); ok {
+		bc.BeforeCommitMetaValues(processor.Context, processor.Result, processor.MetaValues)
+	}
+
+	if bc, ok := processor.Result.(ResourceResultMetaValuesBeforeCommiter); ok {
+		bc.BeforeCommitMetaValues(processor.Context, processor.Resource, processor.MetaValues)
+	}
+
 	var reqCheck = processor.MetaValues.IsRequirementCheck()
 
 	for _, metaValue := range processor.MetaValues.Values {
@@ -137,8 +146,10 @@ func (processor *processor) decode() (errors []error) {
 			err := setter(processor.Result, metaValue, processor.Context)
 			if err != nil {
 				errors = append(errors, err)
-			} else if reqCheck && meta.IsRequired() && meta.IsZero(processor.Result, meta.GetValuer()(processor.Result, processor.Context)) {
-				errors = append(errors, ErrCantBeBlank(processor.Context, processor.Result, meta.GetName(), meta.GetRecordLabelC(processor.Context, processor.Result)))
+			} else if !metaValue.NoBlank && reqCheck && meta.IsRequired() {
+				if meta.IsZero(processor.Result, meta.GetValuer()(processor.Result, processor.Context)) {
+					errors = append(errors, ErrCantBeBlank(processor.Context, processor.Result, meta.GetName(), meta.GetRecordLabelC(processor.Context, processor.Result)))
+				}
 			}
 		}
 	}
@@ -179,4 +190,12 @@ func (processor *processor) Start() error {
 		return errors
 	}
 	return nil
+}
+
+type ResourcerMetaValuesBeforeCommiter interface {
+	BeforeCommitMetaValues(ctx *core.Context, record interface{}, metaValues *MetaValues)
+}
+
+type ResourceResultMetaValuesBeforeCommiter interface {
+	BeforeCommitMetaValues(ctx *core.Context, res Resourcer, metaValues *MetaValues)
 }

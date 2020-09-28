@@ -107,7 +107,7 @@ func New(value interface{}, id, uid string, modelStruct *aorm.ModelStruct) *Reso
 	)
 
 	res.SetI18nModelStruct(modelStruct)
-	res.Value = value
+	res.Value = modelStruct.Value
 	res.SetDispatcher(res)
 	res.SetPrimaryFields()
 	return res
@@ -394,7 +394,7 @@ func (res *Resource) GetResource() *Resource {
 }
 
 // AddValidator add validator to resource, it will invoked when creating, updating, and will rollback the change if validator return any error
-func (res *Resource) AddValidator(fc func(interface{}, *MetaValues, *core.Context) error) {
+func (res *Resource) AddValidator(fc func(record interface{}, metaValues *MetaValues, ctx *core.Context) error) {
 	res.Validators = append(res.Validators, fc)
 }
 

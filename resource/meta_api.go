@@ -5,6 +5,21 @@ import (
 	"github.com/moisespsena-go/aorm"
 )
 
+const (
+	SiblingsRequirementCheckDisabledOnTrue SiblingsRequirementCheckDisabled = iota + 1
+	SiblingsRequirementCheckDisabledOnFalse
+)
+
+type SiblingsRequirementCheckDisabled uint8
+
+func (this SiblingsRequirementCheckDisabled) OnTrue() bool {
+	return this == SiblingsRequirementCheckDisabledOnTrue
+}
+
+func (this SiblingsRequirementCheckDisabled) OnFalse() bool {
+	return this == SiblingsRequirementCheckDisabledOnFalse
+}
+
 type MetaScanner interface {
 	MetaScan(value interface{}) error
 }
@@ -32,7 +47,8 @@ type Metaor interface {
 	GetRecordLabelC(ctx *core.Context, record interface{}) string
 	Proxier() bool
 	IsAlone() bool
-	IsSiblingsRequirementCheckDisabled() bool
+	IsSiblingsRequirementCheckDisabled() SiblingsRequirementCheckDisabled
+	Record(record interface{}) interface{}
 }
 
 // ConfigureMetaBeforeInitializeInterface if a struct's field's type implemented this interface, it will be called when initializing a meta

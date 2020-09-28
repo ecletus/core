@@ -76,7 +76,20 @@ type Meta struct {
 	Typ                        reflect.Type
 	UIValidatorFunc            func(ctx *core.Context, recorde interface{}) string
 	LoadRelatedBeforeSave      bool
-	DisableSiblingsRequirement bool
+	DisableSiblingsRequirement SiblingsRequirementCheckDisabled
+}
+
+func (this *Meta) Record(record interface{}) interface{} {
+	ix := this.FieldStruct.StructIndex
+	if len(ix) == 1 {
+		return record
+	}
+	ix = ix[0:len(ix)-1]
+	recordValue := reflect.Indirect(reflect.ValueOf(record)).FieldByIndex(ix)
+	if recordValue.Kind() != reflect.Ptr {
+		recordValue = recordValue.Addr()
+	}
+	return recordValue.Interface()
 }
 
 func (this *Meta) Proxier() bool {
@@ -87,7 +100,7 @@ func (this *Meta) IsAlone() bool {
 	return false
 }
 
-func (this *Meta) IsSiblingsRequirementCheckDisabled() bool {
+func (this *Meta) IsSiblingsRequirementCheckDisabled() SiblingsRequirementCheckDisabled {
 	return this.DisableSiblingsRequirement
 }
 
@@ -244,7 +257,7 @@ func (this *Meta) PreInitialize() error {
 		this.FieldName = this.Name
 	}
 	if this.FieldStruct = this.BaseResource.GetModelStruct().FieldByPath(this.FieldName); this.FieldStruct != nil {
-		this.Typ = utils.IndirectType(this.FieldStruct.Struct.Type)
+		this.Typ = this.FieldStruct.Struct.Type
 	}
 	return nil
 }
@@ -275,6 +288,9 @@ func (this *Meta) DBName() string {
 func (this *Meta) IsNewRecord(value interface{}) bool {
 	if value == nil {
 		return true
+	}
+	if this.Resource == nil || reflect.ValueOf(this.Resource).IsNil() {
+		return false
 	}
 	if this.FieldStruct != nil && this.FieldStruct.IsChild {
 		return false
