@@ -1,6 +1,8 @@
 package db
 
 import (
+	"context"
+	"database/sql"
 	"fmt"
 	"io/ioutil"
 	"log"
@@ -11,17 +13,18 @@ import (
 	"time"
 
 	"github.com/elliotchance/sshtunnel"
+	_ "github.com/jackc/pgx/stdlib"
 	"golang.org/x/crypto/ssh"
 
 	"github.com/ecletus/core/db/dbconfig"
 	"github.com/moisespsena-go/aorm"
 )
 
-func MySQLfacotry(config *dbconfig.DBConfig) (db *aorm.DB, err error) {
+func MySQLfacotry(_ context.Context, config *dbconfig.DBConfig) (db *aorm.DB, err error) {
 	return aorm.Open("mysql", config.DSN())
 }
 
-func PostgresFactory(config *dbconfig.DBConfig) (db *aorm.DB, err error) {
+func PostgresFactory(ctx context.Context, config *dbconfig.DBConfig) (db *aorm.DB, err error) {
 	if config.SSHTunnel.Enabled {
 		cfg := config.SSHTunnel
 		if !cfg.InheritDisabled {
@@ -48,10 +51,28 @@ func PostgresFactory(config *dbconfig.DBConfig) (db *aorm.DB, err error) {
 		config.Password = cfg.Password
 		config.Name = cfg.Name
 	}
-	return aorm.Open("postgres", config.DSN())
+
+	var (
+		con *sql.DB
+		dsn = config.DSN()
+		loc *time.Location
+	)
+
+	if con, err = sql.Open("pgx", dsn); err != nil {
+		return
+	}
+
+	db = aorm.New(aorm.PostgresDialect(), &aorm.SqlDbWithDsn{con, dsn})
+	if loc, err = config.GetLocation(); err != nil {
+		db.Close()
+		return nil, err
+	} else if loc != nil {
+		db.Location = loc
+	}
+	return db, nil
 }
 
-func Sqlite3Factory(config *dbconfig.DBConfig) (db *aorm.DB, err error) {
+func Sqlite3Factory(_ context.Context, config *dbconfig.DBConfig) (db *aorm.DB, err error) {
 	return aorm.Open("sqlite3", config.DSN())
 }
 

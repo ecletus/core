@@ -8,9 +8,9 @@ import (
 
 type Decoder struct {
 	defaultDenyMode bool
-	res     Resourcer
-	context *core.Context
-	notLoad bool
+	res             Resourcer
+	context         *core.Context
+	notLoad         bool
 }
 
 func NewDecoder(res Resourcer, context *core.Context) *Decoder {
@@ -27,7 +27,6 @@ func (this Decoder) SetNotLoad(notLoad bool) *Decoder {
 }
 
 func (this Decoder) Decode(result interface{}) (err error) {
-	var errors core.Errors
 	var metaValues *MetaValues
 
 	if !this.res.IsSingleton() {
@@ -47,14 +46,18 @@ func (this Decoder) Decode(result interface{}) (err error) {
 	} else {
 		metaValues, err = ConvertFormToMetaValues(this.context, this.context.Request, metaors, "QorResource.")
 	}
-
-	errors.AddError(err)
-	processor := DecodeToResource(this.res, result, metaValues, this.context, this.notLoad)
-	err = processor.Start()
-	errors.AddError(err)
-
-	if errors.HasError() {
-		return errors
+	if err != nil {
+		return
 	}
+	var f ProcessorFlag
+	if this.notLoad {
+		f |= ProcSkipLoad
+	}
+	processor := DecodeToResource(this.res, result, &MetaValue{Name: "QorResource", MetaValues: metaValues}, this.context, f)
+
+	if err = processor.Start(); err != nil {
+		return
+	}
+
 	return nil
 }

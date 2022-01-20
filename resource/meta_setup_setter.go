@@ -2,20 +2,26 @@ package resource
 
 import (
 	"database/sql"
-	"fmt"
 	"mime/multipart"
 	"reflect"
 	"strings"
 	"time"
 
-	"github.com/moisespsena-go/aorm"
 	"github.com/pkg/errors"
+
+	"github.com/moisespsena-go/aorm"
 
 	"github.com/ecletus/core"
 	"github.com/ecletus/core/utils"
 )
 
-func SingleFieldSetter(meta *Meta, fieldName string, setter func(ptr bool, field reflect.Value, metaValue *MetaValue, context *core.Context, record interface{}) error) func(record interface{}, metaValue *MetaValue, context *core.Context) error {
+type GetFielder func(context *core.Context, record interface{}, metaValue *MetaValue) (reflect.Value, error)
+
+func GetField(context *core.Context, record interface{}, metaValue *MetaValue) (reflect.Value, error) {
+	return reflect.Indirect(reflect.ValueOf(record)).FieldByName(metaValue.Meta.GetFieldName()), nil
+}
+
+func Setter(newValue GetFielder, setter func(ptr bool, value reflect.Value, metaValue *MetaValue, context *core.Context, record interface{}) error) func(record interface{}, metaValue *MetaValue, context *core.Context) error {
 	return func(record interface{}, metaValue *MetaValue, context *core.Context) (err error) {
 		if metaValue == nil {
 			return
@@ -23,25 +29,43 @@ func SingleFieldSetter(meta *Meta, fieldName string, setter func(ptr bool, field
 
 		defer func() {
 			if err != nil {
-				err = errors.Wrapf(err, "failed to set meta %v's value to %v", meta.Name, metaValue.Value)
+				err = errors.Wrapf(err, "failed to set meta %v's value to %v", metaValue.Meta.GetName(), metaValue.Value)
 			}
 		}()
 
-		field := reflect.Indirect(reflect.ValueOf(record)).FieldByName(fieldName)
-		ptr := field.Kind() == reflect.Ptr
-		if ptr {
-			if utils.ToString(metaValue.Value) == "" {
-				utils.SetZero(field)
+		if newValue != nil {
+			var value reflect.Value
+			if value, err = newValue(context, record, metaValue); err != nil {
+				return
+			}
+			ptr := value.Kind() == reflect.Ptr
+			if ptr {
+				if utils.ToString(metaValue.Value) == "" {
+					utils.SetZero(value)
+					return nil
+				}
+			} else if !value.IsValid() || !value.CanAddr() {
 				return nil
 			}
-		} else if !field.IsValid() || !field.CanAddr() {
-			return nil
+			return setter(ptr, value, metaValue, context, record)
 		}
-		return setter(ptr, field, metaValue, context, record)
+		return setter(false, reflect.Value{}, metaValue, context, record)
 	}
 }
 
-func GenericSetter(meta *Meta, fieldName string, setter func(field reflect.Value, metaValue *MetaValue, context *core.Context, record interface{}) error) func(record interface{}, metaValue *MetaValue, context *core.Context) error {
+func SingleFieldSetter(fieldName string, setter func(ptr bool, field reflect.Value, metaValue *MetaValue, context *core.Context, record interface{}) error) func(record interface{}, metaValue *MetaValue, context *core.Context) error {
+	return Setter(func(context *core.Context, record interface{}, metaValue *MetaValue) (reflect.Value, error) {
+		return reflect.Indirect(reflect.ValueOf(record)).FieldByName(fieldName), nil
+	}, setter)
+}
+
+func SingleFieldIndexSetter(fieldIndex []int, setter func(ptr bool, field reflect.Value, metaValue *MetaValue, context *core.Context, record interface{}) error) func(record interface{}, metaValue *MetaValue, context *core.Context) error {
+	return Setter(func(context *core.Context, record interface{}, metaValue *MetaValue) (reflect.Value, error) {
+		return reflect.Indirect(reflect.ValueOf(record)).FieldByIndex(fieldIndex), nil
+	}, setter)
+}
+
+func GenericSetter(meta Metaor, fieldName string, setter func(field reflect.Value, metaValue *MetaValue, context *core.Context, record interface{}) error) func(record interface{}, metaValue *MetaValue, context *core.Context) error {
 	return func(record interface{}, metaValue *MetaValue, context *core.Context) (err error) {
 		if metaValue == nil {
 			return
@@ -49,7 +73,7 @@ func GenericSetter(meta *Meta, fieldName string, setter func(field reflect.Value
 
 		defer func() {
 			if err != nil {
-				err = errors.Wrapf(err, "failed to set meta %v's value to %v", meta.Name, metaValue.Value)
+				err = errors.Wrapf(err, "failed to set meta %v's value to %v", meta.GetName(), metaValue.Value)
 			}
 		}()
 
@@ -60,12 +84,12 @@ func GenericSetter(meta *Meta, fieldName string, setter func(field reflect.Value
 					metaValue.MetaValues == nil &&
 					fieldStruct != nil &&
 					fieldStruct.Relationship != nil &&
-					(fieldStruct.Relationship.Kind == "belongs_to" ||
-						fieldStruct.Relationship.Kind == "has_one") {
+					(fieldStruct.Relationship.Kind == aorm.BELONGS_TO ||
+						fieldStruct.Relationship.Kind == aorm.HAS_ONE) {
 					metaID := metaValue.Parent.Meta.GetResource().GetMetas([]string{fieldStruct.Relationship.ForeignFieldNames[0]})[0]
 					err = metaID.GetSetter()(record, metaValue, context)
 
-					if !meta.LoadRelatedBeforeSave && !field.IsNil() {
+					if !meta.IsLoadRelatedBeforeSave() && !field.IsNil() {
 						// set to nil
 						field.Set(reflect.Zero(field.Type()))
 					}
@@ -89,7 +113,11 @@ func setupSetter(meta *Meta, fieldName string, record interface{}) {
 	// Setup nested fields
 	if nestedField {
 		fieldNames := strings.Split(fieldName, ".")
-		setupSetter(meta, strings.Join(fieldNames[1:], "."), getNestedModel(record, strings.Join(fieldNames[0:2], "."), nil))
+		model := getNestedModel(record, strings.Join(fieldNames[0:2], "."), nil)
+		if model == nil {
+			return
+		}
+		setupSetter(meta, strings.Join(fieldNames[1:], "."), model)
 
 		oldSetter := meta.Setter
 		meta.Setter = func(record interface{}, metaValue *MetaValue, context *core.Context) error {
@@ -104,31 +132,47 @@ func setupSetter(meta *Meta, fieldName string, record interface{}) {
 
 	// Setup child / belongs_to / many_to_many GenericSetter
 	if meta.FieldStruct != nil {
+		if meta.FieldStruct.IsReadOnly {
+			return
+		}
+
 		if relationship := meta.FieldStruct.Relationship; relationship != nil && !meta.FieldStruct.IsChild {
-			if relationship.Kind == "belongs_to" || relationship.Kind == "many_to_many" {
+			if relationship.Kind.Is(aorm.BELONGS_TO, aorm.M2M) {
 				meta.Setter = commonSetter(func(field reflect.Value, metaValue *MetaValue, context *core.Context, record interface{}) (err error) {
 					var (
 						indirectValue = reflect.Indirect(reflect.ValueOf(record))
-						primaryKeys   []aorm.ID
 					)
 
 					// associations not changed for belongs to
-					if relationship.Kind == "belongs_to" && len(relationship.ForeignFieldNames) == 1 {
-						panic("not implemented: parse primary keys")
-						var oldPrimaryKeys []aorm.ID
-						for _, fieldName := range relationship.ForeignFieldNames {
-							oldPrimaryKeys = append(oldPrimaryKeys, indirectValue.FieldByName(fieldName).Addr().Interface().(aorm.ID))
-						}
-						// if not changed
-						if fmt.Sprint(primaryKeys) == fmt.Sprint(oldPrimaryKeys) {
-							return
+					if relationship.Kind == aorm.BELONGS_TO && len(relationship.ForeignFieldNames) == 1 {
+						if metaValue.MetaValues != nil {
+							if metaValue.MetaValues.Disabled {
+								for _, fieldName := range relationship.ForeignFieldNames {
+									field := indirectValue.FieldByName(fieldName)
+									field.Set(reflect.Zero(field.Type()))
+								}
+								// set current field value to blank
+								field.Set(reflect.Zero(field.Type()))
+								return
+							}
 						}
 
-						// if removed
-						if len(primaryKeys) == 0 {
-							field := indirectValue.FieldByName(relationship.ForeignFieldNames[0])
-							field.Set(reflect.Zero(field.Type()))
+						field.Set(reflect.Zero(field.Type()))
+						elType, _, _ := aorm.StructTypeOf(field.Type())
+						el := reflect.New(elType)
+						value := metaValue.FirstStringValue()
+						id, err2 := relationship.AssociationModel.ParseIDString(value)
+						if err2 != nil {
+							return errors.Wrapf(err2, "parse id of %q", value)
 						}
+						id.SetTo(el.Interface())
+						field.Set(el.Elem())
+
+						for i, fieldName := range relationship.ForeignFieldNames {
+							field := indirectValue.FieldByName(fieldName)
+							field.Set(el.Elem().FieldByName(relationship.AssociationFieldNames[i]))
+						}
+						return
 					}
 
 					// set current field value to blank
@@ -149,7 +193,7 @@ func setupSetter(meta *Meta, fieldName string, record interface{}) {
 					}
 
 					// Replace many 2 many relations
-					if relationship.Kind == "many_to_many" {
+					if relationship.Kind == aorm.M2M {
 						if !aorm.ZeroIdOf(record) {
 							context.DB().Model(record).Association(meta.FieldName).Replace(field.Interface())
 							field.Set(reflect.Zero(field.Type()))
@@ -179,48 +223,63 @@ func setupSetter(meta *Meta, fieldName string, record interface{}) {
 	}
 
 	switch field.Addr().Interface().(type) {
+	case MetaValueScanner:
+		meta.Setter = commonSetter(func(field reflect.Value, metaValue *MetaValue, context *core.Context, record interface{}) error {
+			scanner := field.Addr().Interface().(MetaValueScanner)
+			var f ProcessorFlag
+			if metaValue.Value != nil {
+				if err := scanner.MetaValueScan(context, metaValue); err != nil {
+					return errors.Wrap(err, "metavalue scan")
+				}
+				f = ProcMerge
+			}
+			if metaValue.MetaValues != nil && len(metaValue.MetaValues.Values) > 0 {
+				return decodeMetaValuesToField(meta.Resource, record, field, metaValue, context, f)
+			}
+			return nil
+		})
 	case ContextScanner:
 		meta.Setter = commonSetter(func(field reflect.Value, metaValue *MetaValue, context *core.Context, record interface{}) error {
 			scanner := field.Addr().Interface().(ContextScanner)
-			var merge bool
+			var f ProcessorFlag
 			if metaValue.Value != nil {
 				if err := scanner.ContextScan(context, metaValue.Value); err != nil {
 					return errors.Wrap(err, "context scan")
 				}
-				merge = true
+				f = ProcMerge
 			}
 			if metaValue.MetaValues != nil && len(metaValue.MetaValues.Values) > 0 {
-				return decodeMetaValuesToField(meta.Resource, field, metaValue, context, merge)
+				return decodeMetaValuesToField(meta.Resource, record, field, metaValue, context, f)
 			}
 			return nil
 		})
 	case ContextStringsScanner:
 		meta.Setter = commonSetter(func(field reflect.Value, metaValue *MetaValue, context *core.Context, record interface{}) error {
 			scanner := field.Addr().Interface().(ContextStringsScanner)
-			var merge bool
+			var f ProcessorFlag
 			if metaValue.Value != nil {
 				if err := scanner.StringsScan(context, metaValue.Value.([]string)); err != nil {
 					return errors.Wrap(err, "context strings scan")
 				}
-				merge = true
+				f = ProcMerge
 			}
 			if metaValue.MetaValues != nil && len(metaValue.MetaValues.Values) > 0 {
-				return decodeMetaValuesToField(meta.Resource, field, metaValue, context, merge)
+				return decodeMetaValuesToField(meta.Resource, record, field, metaValue, context, f)
 			}
 			return nil
 		})
 	case StringsScanner:
 		meta.Setter = commonSetter(func(field reflect.Value, metaValue *MetaValue, context *core.Context, record interface{}) error {
 			scanner := field.Addr().Interface().(StringsScanner)
-			var merge bool
+			var f ProcessorFlag
 			if metaValue.Value != nil {
 				if err := scanner.StringsScan(metaValue.Value.([]string)); err != nil {
 					return errors.Wrap(err, "context strings scan")
 				}
-				merge = true
+				f = ProcMerge
 			}
 			if metaValue.MetaValues != nil && len(metaValue.MetaValues.Values) > 0 {
-				return decodeMetaValuesToField(meta.Resource, field, metaValue, context, merge)
+				return decodeMetaValuesToField(meta.Resource, record, field, metaValue, context, f)
 			}
 			return nil
 		})
@@ -260,7 +319,7 @@ func setupSetter(meta *Meta, fieldName string, record interface{}) {
 				meta.Setter = commonSetter(func(field reflect.Value, metaValue *MetaValue, context *core.Context, record interface{}) error {
 					if scanner, ok := field.Addr().Interface().(sql.Scanner); ok {
 						if metaValue.Value == nil && len(metaValue.MetaValues.Values) > 0 {
-							return decodeMetaValuesToField(meta.Resource, field, metaValue, context)
+							return decodeMetaValuesToField(meta.Resource, record, field, metaValue, context, 0)
 						}
 
 						if scanner.Scan(metaValue.Value) != nil {

@@ -1,13 +1,13 @@
 package core
 
-type BreadCrumberFunc func(ctx *Context) []Breadcrumb
+type BreadCrumberFunc func(ctx *Context) ([]Breadcrumb, error)
 
-func (f BreadCrumberFunc) Breadcrumbs(ctx *Context) []Breadcrumb {
+func (f BreadCrumberFunc) Breadcrumbs(ctx *Context) ([]Breadcrumb, error) {
 	return f(ctx)
 }
 
 type Breadcrumber interface {
-	Breadcrumbs(ctx *Context) (crumbs []Breadcrumb)
+	Breadcrumbs(ctx *Context) (crumbs []Breadcrumb, err error)
 }
 
 type Breadcrumb interface {
@@ -22,7 +22,7 @@ type BreadcrumbProxy struct {
 	icon  string
 }
 
-func (b BreadcrumbProxy) URI(context *Context) string {
+func (b BreadcrumbProxy) URI(*Context) string {
 	return b.uri
 }
 func (b BreadcrumbProxy) Label() string {

@@ -6,7 +6,9 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
+	"github.com/moisespsena-go/aorm"
 	"github.com/moisespsena-go/stringvar"
 )
 
@@ -28,19 +30,37 @@ type SSHTunnelConfig struct {
 }
 
 type DBConfig struct {
-	Name           string          `mapstructure:"name"`
-	Adapter        string          `mapstructure:"adapter"`
-	Host           string          `mapstructure:"host"`
-	Port           uint16          `mapstructure:"port"`
-	User           string          `mapstructure:"user"`
-	Password       string          `mapstructure:"password"`
-	SSL            string          `mapstructure:"ssl"`
-	Args           url.Values      `mapstructure:"args"`
-	SSHTunnel      SSHTunnelConfig `mapstructure:"ssh_tunnel"`
-	CommitDisabled bool            `mapstructure:"commit_disabled"`
+	Name      string          `mapstructure:"name"`
+	Adapter   string          `mapstructure:"adapter"`
+	Host      string          `mapstructure:"host"`
+	Port      uint16          `mapstructure:"port"`
+	User      string          `mapstructure:"user"`
+	Password  string          `mapstructure:"password"`
+	SSL       string          `mapstructure:"ssl"`
+	Args      url.Values      `mapstructure:"args"`
+	SSHTunnel SSHTunnelConfig `mapstructure:"ssh_tunnel"`
+	DryRun    bool            `mapstructure:"dry_run"`
+	Location  *struct {
+		// UtcOffset example: -03:00
+		UtcOffset string
+		// Name example: America/Sao_Paulo
+		Name string
+	}
 }
 
-func (this DBConfig) DSN() string {
+func (this *DBConfig) GetLocation() (loc *time.Location, err error) {
+	if this.Location != nil {
+		if this.Location.UtcOffset != "" {
+			return aorm.ParseUTCTimeLocationOffset(this.Location.UtcOffset)
+		}
+		if this.Location.Name != "" {
+			return time.LoadLocation(this.Location.Name)
+		}
+	}
+	return
+}
+
+func (this *DBConfig) DSN() string {
 	switch this.Adapter {
 	case "mysql":
 		var args = make(url.Values)
@@ -58,7 +78,7 @@ func (this DBConfig) DSN() string {
 		if this.SSL == "" {
 			args.Set("sslmode", "disable")
 		}
-		args.Set("binary_parameters", "yes")
+		// args.Set("binary_parameters", "yes")
 		var hostPort = this.Host
 		if this.Port != 0 {
 			hostPort += fmt.Sprintf(":%d", this.Port)

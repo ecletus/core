@@ -7,9 +7,9 @@ func convertMapToMetaValues(context *core.Context, values map[string]interface{}
 		root = []*MetaValue{{}}
 	}
 	var (
-		parent = root[0]
-		metaValues = &MetaValues{ByName: map[string]int{}}
-		metaorMap  = make(map[string]Metaor)
+		parent       = root[0]
+		metaValues   = &MetaValues{}
+		metaorMap    = make(map[string]Metaor)
 		childMetaors []Metaor
 		newMetaValue = func(key string, value interface{}) {
 			var metaValue *MetaValue
@@ -31,11 +31,11 @@ func convertMapToMetaValues(context *core.Context, values map[string]interface{}
 						}
 						if children, err := convertMapToMetaValues(context, mr, childMetaors, parent); err == nil {
 							metaValue := &MetaValue{
-								Parent: parent,
-								Name: key,
-								Meta: metaor,
+								Parent:     parent,
+								Name:       key,
+								Meta:       metaor,
 								MetaValues: children,
-								Index: idx,
+								Index:      idx,
 							}
 							metaValues.Values = append(metaValues.Values, metaValue)
 						}
@@ -50,8 +50,7 @@ func convertMapToMetaValues(context *core.Context, values map[string]interface{}
 			}
 
 			if metaValue != nil {
-				metaValues.ByName[metaValue.Name] = len(metaValues.Values)
-				metaValues.Values = append(metaValues.Values, metaValue)
+				metaValues.Add(metaValue)
 			}
 		}
 	)

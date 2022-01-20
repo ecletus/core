@@ -96,6 +96,7 @@ func (r SitesMap) Names() (names []string) {
 	for _, site := range r {
 		names = append(names, site.Name())
 	}
+	sort.Strings(names)
 	return
 }
 

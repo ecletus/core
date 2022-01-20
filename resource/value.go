@@ -1,7 +1,11 @@
 package resource
 
+import "C"
 import (
 	"reflect"
+
+	"github.com/moisespsena-go/aorm"
+	"github.com/pkg/errors"
 )
 
 type Struct interface {
@@ -33,7 +37,8 @@ func (v StructValue) New() interface{} {
 	if v.Value == nil {
 		return nil
 	}
-	obj := reflect.New(reflect.Indirect(reflect.ValueOf(v.Value)).Type()).Interface()
+
+	obj := reflect.New(aorm.MustStructTypeOfInterface(v.Value)).Interface()
 
 	if init, ok := obj.(interface {
 		Init()
@@ -42,6 +47,14 @@ func (v StructValue) New() interface{} {
 	}
 
 	return obj
+}
+
+func (this *Resource) NewForIdS(id string) (interface{}, error) {
+	if ID, err := this.ParseID(id); err != nil {
+		return nil, errors.Wrapf(err, "Resource %q: ParseID %s", this.UID, id)
+	} else {
+		return ID.SetTo(this.New()), nil
+	}
 }
 
 func (v StructValue) NewSlicePtrArgs(len, cap int) interface{} {
@@ -112,5 +125,11 @@ func (v StructValue) newChanArgs(buf int, ptr bool) interface{} {
 	if !ptr {
 		typ = typ.Elem()
 	}
-	return reflect.MakeChan(typ, buf).Interface()
+	var (
+		t = reflect.ChanOf(reflect.BothDir, typ)
+		c = reflect.MakeChan(t, buf)
+		r = reflect.New(t)
+	)
+	r.Elem().Set(c)
+	return r.Interface()
 }

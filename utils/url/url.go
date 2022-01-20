@@ -1,11 +1,23 @@
 package url
 
 import (
-	"strings"
 	"fmt"
-	"path"
 	nurl "net/url"
+	"path"
+	"strings"
 )
+
+type Flag bool
+
+type Param struct {
+	Name   string
+	Values []string
+}
+
+type FlagParam struct {
+	Name  string
+	Value bool
+}
 
 // PatchURL updates the query part of the request url.
 //     PatchURL("google.com","key","value") => "google.com?key=value"
@@ -23,37 +35,46 @@ func PatchURL(originalURL string, params ...interface{}) (patchedURL string, err
 	for i := 0; i < len(params)/2; i++ {
 		// Check if params is key&value pair
 		key := fmt.Sprintf("%v", params[i*2])
-		value := fmt.Sprintf("%v", params[i*2+1])
+		rawValue := params[i*2+1]
+		if flag, ok := rawValue.(Flag); ok {
+			if flag {
+				query.Set(key, "")
+			} else {
+				query.Del(key)
+			}
+		} else {
+			value := fmt.Sprintf("%v", rawValue)
 
-		if key[0] == '~' {
-			key = key[1:]
-			if values, ok := query[key]; ok {
-				var (
-					newValues []string
-					has bool
-				)
-				for _, v := range values {
-					if v == value {
-						has = true
-					} else {
-						newValues = append(newValues, v)
+			if key[0] == '~' {
+				key = key[1:]
+				if values, ok := query[key]; ok {
+					var (
+						newValues []string
+						has       bool
+					)
+					for _, v := range values {
+						if v == value {
+							has = true
+						} else {
+							newValues = append(newValues, v)
+						}
 					}
-				}
-				if !has {
-					newValues = append(newValues, value)
-				}
-				if len(newValues) == 0 {
-					query.Del(key)
+					if !has {
+						newValues = append(newValues, value)
+					}
+					if len(newValues) == 0 {
+						query.Del(key)
+					} else {
+						query[key] = newValues
+					}
 				} else {
-					query[key] = newValues
+					query.Set(key, value)
 				}
+			} else if value == "" {
+				query.Del(key)
 			} else {
 				query.Set(key, value)
 			}
-		} else if value == "" {
-			query.Del(key)
-		} else {
-			query.Set(key, value)
 		}
 	}
 
@@ -71,15 +92,47 @@ func JoinURL(originalURL string, paths ...interface{}) (joinedURL string, err er
 		return
 	}
 
+	var (
+		parsedQuery bool
+		query       nurl.Values
+	)
+
+	if u.RawPath != "" {
+		u.Path = u.RawPath
+	}
+
 	var urlPaths = []string{u.Path}
 	for _, p := range paths {
-		urlPaths = append(urlPaths, fmt.Sprint(p))
+		switch t := p.(type) {
+		case *Param:
+			if !parsedQuery {
+				query = u.Query()
+				parsedQuery = true
+			}
+			query[t.Name] = t.Values
+		case FlagParam:
+			if !parsedQuery {
+				query = u.Query()
+				parsedQuery = true
+			}
+			if t.Value {
+				query.Set(t.Name, "")
+			} else {
+				query.Del(t.Name)
+			}
+		default:
+			urlPaths = append(urlPaths, fmt.Sprint(p))
+		}
 	}
 
 	if strings.HasSuffix(strings.Join(urlPaths, ""), "/") {
 		u.Path = path.Join(urlPaths...) + "/"
 	} else {
 		u.Path = path.Join(urlPaths...)
+	}
+
+	if parsedQuery {
+		u.RawQuery = query.Encode()
 	}
 
 	joinedURL = u.String()

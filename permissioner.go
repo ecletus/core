@@ -88,3 +88,7 @@ func (f RecordPermissionerFunc) HasRecordPermission(mode roles.PermissionMode, c
 func NewRecordPermissioner(f func(mode roles.PermissionMode, ctx *Context, record interface{}) (perm roles.Perm)) RecordPermissioner {
 	return RecordPermissionerFunc(f)
 }
+
+type DefaultPermissionDenier interface {
+	DefaultPermissionDeny() bool
+}

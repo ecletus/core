@@ -8,7 +8,7 @@ import (
 )
 
 type ContextProxy struct {
-	Getter func()context.Context
+	Getter func() context.Context
 }
 
 func (this *ContextProxy) Deadline() (deadline time.Time, ok bool) {
@@ -127,4 +127,13 @@ func (this *LocalContext) BackupValues() func() {
 	return func() {
 		this.context = old
 	}
+}
+
+func (this LocalContext) Copy() *LocalContext {
+	copy := this
+	copy.values = map[interface{}]interface{}{}
+	for key, value := range this.values {
+		copy.values[key] = value
+	}
+	return &copy
 }

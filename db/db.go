@@ -4,18 +4,18 @@ import (
 	"bufio"
 	"context"
 	"errors"
-	"github.com/ecletus/core/db/dbconfig"
 	"io"
 	"os"
 	"os/exec"
 	"time"
+
+	"github.com/ecletus/core/db/dbconfig"
 
 	"github.com/moisespsena-go/aorm"
 	_ "github.com/moisespsena-go/aorm/dialects/mysql"
 	_ "github.com/moisespsena-go/aorm/dialects/postgres"
 	_ "github.com/moisespsena-go/aorm/dialects/sqlite"
 )
-
 
 type RawDBConnection interface {
 	io.Closer
@@ -94,7 +94,7 @@ func (c *CmdDBConnection) Close() error {
 	return nil
 }
 
-type Factory func(config *dbconfig.DBConfig) (db *aorm.DB, err error)
+type Factory func(ctx context.Context, config *dbconfig.DBConfig) (db *aorm.DB, err error)
 type RawFactory func(ctx context.Context, config *dbconfig.DBConfig) (db RawDBConnection, err error)
 type Factories map[string]Factory
 type RawFactories map[string]RawFactory
@@ -103,9 +103,9 @@ func (f Factories) Register(adapterName string, factory Factory) {
 	f[adapterName] = factory
 }
 
-func (f Factories) Factory(config *dbconfig.DBConfig) (db *aorm.DB, err error) {
+func (f Factories) Factory(ctx context.Context, config *dbconfig.DBConfig) (db *aorm.DB, err error) {
 	if fc, ok := f[config.Adapter]; ok {
-		db, err = fc(config)
+		db, err = fc(ctx, config)
 		if err != nil {
 			return nil, err
 		}
@@ -130,4 +130,3 @@ var SystemRawFactories = RawFactories{
 	"sqlite":   Sqlite3RawFactory,
 	"sqlite3":  Sqlite3RawFactory,
 }
-

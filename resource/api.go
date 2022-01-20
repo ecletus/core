@@ -1,9 +1,10 @@
 package resource
 
 import (
+	"github.com/moisespsena-go/edis"
+
 	"github.com/ecletus/core"
 	"github.com/moisespsena-go/aorm"
-	"github.com/moisespsena-go/edis"
 )
 
 // Resourcer interface
@@ -19,9 +20,9 @@ type Resourcer interface {
 	GetContextMetas(*core.Context) []Metaor
 	NewStruct(site ...*core.Site) interface{}
 	GetPathLevel() int
-	SetParent(parent Resourcer, rel *aorm.Relationship)
+	SetParent(parent Resourcer, rel *ParentRelationship)
 	GetParentResource() Resourcer
-	GetParentRelation() *aorm.Relationship
+	GetParentRelation() *ParentRelationship
 	IsSingleton() bool
 	ToParam() string
 	ParamIDPattern() string
@@ -41,4 +42,6 @@ type Resourcer interface {
 	PrimaryValues(id aorm.ID) (args []interface{})
 	GetModelStruct() *aorm.ModelStruct
 	DefaultDenyMode() bool
+	DefaultPrimaryKeyOrder() aorm.Order
+	SetDefaultPrimaryKeyOrder(val aorm.Order)
 }

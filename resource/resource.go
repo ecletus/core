@@ -11,10 +11,12 @@ import (
 	"github.com/moisespsena-go/maps"
 
 	path_helpers "github.com/moisespsena-go/path-helpers"
+	hash_key_gen "github.com/unapu-go/hash-key-gen"
 
-	"github.com/ecletus/roles"
 	"github.com/jinzhu/inflection"
 	"github.com/moisespsena-go/edis"
+
+	"github.com/ecletus/roles"
 	"github.com/moisespsena-go/i18n-modular/i18nmod"
 
 	"github.com/ecletus/core"
@@ -32,11 +34,17 @@ type Callback struct {
 	Handler CalbackFunc
 }
 
+type ParentRelationship struct {
+	Data maps.Map
+	aorm.Relationship
+}
+
 // Resource is a struct that including basic definition of qor resource
 type Resource struct {
 	edis.EventDispatcher
 	StructValue
 	UID                string
+	UIDHash            uintptr
 	ID                 string
 	Name               string
 	PluralName         string
@@ -50,7 +58,7 @@ type Resource struct {
 	newStructCallbacks []func(obj interface{}, site *core.Site)
 	ModelStruct        *aorm.ModelStruct
 	PathLevel          int
-	ParentRelation     *aorm.Relationship
+	ParentRelation     *ParentRelationship
 	parentResource     Resourcer
 	Data               maps.SyncedMap
 	Layouts            map[string]LayoutInterface
@@ -58,10 +66,10 @@ type Resource struct {
 
 	ContextSetupFunc func(ctx *core.Context) *core.Context
 
-	ContextPermissioners,
-	Permissioners []core.Permissioner
-	defaultDenyMode func() bool
-	Tags            aorm.TagSetting
+	Permissioners          []core.Permissioner
+	defaultDenyMode        func() bool
+	Tags                   aorm.TagSetting
+	defaultPrimaryKeyOrder aorm.Order
 }
 
 // New initialize qor resource
@@ -94,15 +102,17 @@ func New(value interface{}, id, uid string, modelStruct *aorm.ModelStruct) *Reso
 	}
 	var (
 		res = &Resource{
-			UID:                uid,
-			PKG:                pkg,
-			ID:                 id,
-			Name:               name,
-			PluralName:         inflection.Plural(name),
-			PkgPath:            pkgPath,
-			ModelStruct:        modelStruct,
-			Layouts:            make(map[string]LayoutInterface),
-			newStructCallbacks: []func(obj interface{}, site *core.Site){},
+			UID:                    uid,
+			UIDHash:                hash_key_gen.OfString(uid),
+			PKG:                    pkg,
+			ID:                     id,
+			Name:                   name,
+			PluralName:             inflection.Plural(name),
+			PkgPath:                pkgPath,
+			ModelStruct:            modelStruct,
+			Layouts:                make(map[string]LayoutInterface),
+			newStructCallbacks:     []func(obj interface{}, site *core.Site){},
+			defaultPrimaryKeyOrder: aorm.DESC,
 		}
 	)
 
@@ -111,6 +121,26 @@ func New(value interface{}, id, uid string, modelStruct *aorm.ModelStruct) *Reso
 	res.SetDispatcher(res)
 	res.SetPrimaryFields()
 	return res
+}
+
+func (res *Resource) InstanceOf(rec interface{}, fieldName ...string) *aorm.Instance {
+	return res.ModelStruct.InstanceOf(rec, fieldName...)
+}
+
+func (res *Resource) FieldOf(rec interface{}, fieldName string) *aorm.Field {
+	return res.InstanceOf(rec, fieldName).FirstField()
+}
+
+func (res *Resource) GetData() maps.Interface {
+	return &res.Data
+}
+
+func (res *Resource) DefaultPrimaryKeyOrder() aorm.Order {
+	return res.defaultPrimaryKeyOrder
+}
+
+func (res *Resource) SetDefaultPrimaryKeyOrder(val aorm.Order) {
+	res.defaultPrimaryKeyOrder = val
 }
 
 func (res *Resource) ConfigSet(key, value interface{}) {
@@ -189,7 +219,7 @@ func (res *Resource) Validate(record interface{}, values *MetaValues, ctx *core.
 			}
 			if valueStr := utils.ToString(value.Value); strings.TrimSpace(valueStr) == "" {
 				if value.Meta.IsRequired() {
-					label := value.Meta.GetLabelC(ctx)
+					label := value.Meta.GetRecordLabelC(ctx, record)
 					onError(ErrCantBeBlank(ctx, record, value.Meta.GetName(), label))
 					hasBlank = true
 				}
@@ -342,7 +372,7 @@ func (res *Resource) ToParam() string {
 	return ""
 }
 
-func (res *Resource) SetParent(parent Resourcer, rel *aorm.Relationship) {
+func (res *Resource) SetParent(parent Resourcer, rel *ParentRelationship) {
 	res.parentResource = parent
 	if rel != nil {
 		res.ParentRelation = rel
@@ -353,7 +383,7 @@ func (res *Resource) GetParentResource() Resourcer {
 	return res.parentResource
 }
 
-func (res *Resource) GetParentRelation() *aorm.Relationship {
+func (res *Resource) GetParentRelation() *ParentRelationship {
 	return res.ParentRelation
 }
 
@@ -408,10 +438,6 @@ func (res *Resource) GetMetas([]string) []Metaor {
 	panic("not defined")
 }
 
-func (res *Resource) ContextPermissioner(p core.Permissioner, pN ...core.Permissioner) {
-	res.ContextPermissioners = append(append(res.ContextPermissioners, p), pN...)
-}
-
 func (res *Resource) Permissioner(p core.Permissioner, pN ...core.Permissioner) {
 	res.Permissioners = append(append(res.Permissioners, p), pN...)
 }
@@ -424,15 +450,6 @@ func (res *Resource) HasPermission(mode roles.PermissionMode, context *core.Cont
 	}
 	if res.Permission != nil {
 		return res.Permission.HasPermission(context, mode, context.Roles.Interfaces()...)
-	}
-	return
-}
-
-func (res *Resource) HasContextPermission(mode roles.PermissionMode, context *core.Context) (perm roles.Perm) {
-	for _, permissioner := range res.ContextPermissioners {
-		if perm = permissioner.HasPermission(mode, context); perm != roles.UNDEF {
-			return
-		}
 	}
 	return
 }
@@ -453,20 +470,10 @@ func (res *Resource) PrimaryValues(id aorm.ID) (args []interface{}) {
 	return
 }
 
-// MetaValuesToPrimaryQuery to primary query params from meta values
-func (res *Resource) MetaValuesToPrimaryQuery(ctx *core.Context, metaValues *MetaValues) (string, []interface{}, error) {
-	return MetaValuesToPrimaryQuery(ctx, res, metaValues, false)
-}
-
-// ValuesToPrimaryQuery to primary query params from slice values
-func (res *Resource) ValuesToPrimaryQuery(ctx *core.Context, exclude bool, values ...interface{}) (string, []interface{}) {
-	return ValuesToPrimaryQuery(ctx, res, exclude, values...)
-}
-
 func (res *Resource) Crud(ctx *core.Context) *CRUD {
 	return NewCrud(res, ctx)
 }
 
 func (res *Resource) CrudDB(db *aorm.DB) *CRUD {
-	return NewCrud(res, (&core.Context{}).SetDB(db))
+	return NewCrud(res, core.NewContext().SetDB(db))
 }

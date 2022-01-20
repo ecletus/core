@@ -1,6 +1,8 @@
 package resource
 
-import "github.com/ecletus/core"
+import (
+	"github.com/ecletus/core"
+)
 
 // ContextScanner interface
 // Allow to scan value with reflect.StructField arg
@@ -21,4 +23,8 @@ type ContextStringsScanner interface {
 type StringsScanner interface {
 	// ContextScan scan value
 	StringsScan(src []string) error
+}
+
+type MetaValueScanner interface {
+	MetaValueScan(ctx *core.Context, value *MetaValue) (err error)
 }

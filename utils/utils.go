@@ -91,6 +91,27 @@ func HumanizeString(str string) string {
 	return strings.Title(string(human))
 }
 
+// HumanizeString Humanize separates string based on capitalizd letters
+// e.g. "OrderItem" -> "Order Item"
+// e.g. "Order_item" -> "Order Item"
+func HumanizeStringU(str string) string {
+	var human []rune
+	for i, l := range str {
+		if i > 0 {
+			if isUppercase(byte(l)) {
+				if (!isUppercase(str[i-1]) && str[i-1] != ' ') || (i+1 < len(str) && !isUppercase(str[i+1]) && str[i+1] != ' ' && str[i-1] != ' ') {
+					human = append(human, rune(' '))
+				}
+			} else if l == '_' {
+				human = append(human, rune(' '))
+				continue
+			}
+		}
+		human = append(human, l)
+	}
+	return strings.Title(string(human))
+}
+
 func isUppercase(char byte) bool {
 	return 'A' <= char && char <= 'Z'
 }
@@ -196,7 +217,7 @@ func Stringify(object interface{}) string {
 			if pk.IsZero() {
 				return ""
 			}
-			return fmt.Sprintf("%v#%v", instance.Struct.Type.Name(), pk)
+			return fmt.Sprintf("%v #%v", HumanizeStringU(instance.Model.Type.Name()), pk)
 		}
 	}
 	return fmt.Sprint(object)
@@ -207,9 +228,7 @@ func StringifyContext(object interface{}, ctx *core.Context) string {
 	if helpers.IsNilInterface(object) {
 		return ""
 	}
-	if obj, ok := object.(interface {
-		ContextString(ctx *core.Context) string
-	}); ok {
+	if obj, ok := object.(core.ContextStringer); ok {
 		return obj.ContextString(ctx)
 	}
 	return Stringify(object)
@@ -330,7 +349,7 @@ var FormatTime = func(date time.Time, layout string, context *core.Context) stri
 	return date.Format(layout)
 }
 
-var replaceIdxRegexp = regexp.MustCompile(`\[\d+\]`)
+var replaceIdxRegexp = regexp.MustCompile(`\.\d+`)
 
 // SortFormKeys sort form keys
 func SortFormKeys(strs []string) {
@@ -404,6 +423,15 @@ func RenderHtmlTemplate(tpl string, data interface{}) template.HTML {
 func TypeId(tp interface{}) string {
 	typ := IndirectType(tp)
 	return typ.PkgPath() + "." + typ.Name()
+}
+
+func IndirectItemType(v interface{}) (typ reflect.Type) {
+	typ = IndirectType(v)
+	switch typ.Kind() {
+	case reflect.Array, reflect.Slice, reflect.Map:
+		typ = IndirectType(typ.Elem())
+	}
+	return
 }
 
 func IndirectType(v interface{}) (typ reflect.Type) {

@@ -11,6 +11,8 @@ import (
 
 	"github.com/ecletus/roles"
 	"github.com/ecletus/session"
+	"golang.org/x/text/language"
+
 	"github.com/moisespsena-go/httpu"
 
 	"github.com/ecletus/core/site_config"
@@ -19,8 +21,9 @@ import (
 	"github.com/moisespsena-go/logging"
 
 	"github.com/ecletus/common"
-	"github.com/moisespsena-go/i18n-modular/i18nmod"
 	"github.com/moisespsena-go/xroute"
+
+	"github.com/moisespsena-go/i18n-modular/i18nmod"
 
 	"github.com/moisespsena/template/html/template"
 
@@ -60,6 +63,11 @@ func (this StringSlice) Interfaces() []interface{} {
 	return result
 }
 
+type FormOptions struct {
+	InputPrefix               string
+	DefaultValueFixerDisabled bool
+}
+
 // Context qor context, which is used for many qor components, used to share information between them
 type Context struct {
 	LocalContext
@@ -80,7 +88,7 @@ type Context struct {
 	I18nContext    i18nmod.Context
 	DefaultLocale  string
 	Locale         string
-	TimeLocation   *time.Location
+	timeLocation   *time.Location
 	Prefix         string
 	StaticURL      string
 	top            *Context
@@ -93,12 +101,72 @@ type Context struct {
 	ContextFactory *ContextFactory
 	I18nGroupStack *i18nGroup
 	Role           *roles.Role
+	Lang           string
+	LangTag        *language.Tag
 	NotFound       bool
 	Api            bool
 
 	logger        logging.Logger
 	RedirectTo    string
-	MetaTreeStack NameStacker
+	MetaTreeStack *NameStacker
+
+	DecoderExcludes *DecoderExcludes
+	requestTime     time.Time
+
+	MetaContextFactory func(parent *Context, res interface{}, record interface{}) *Context
+	FormOptions        FormOptions
+}
+
+func NewContext(arg ...*Context) (ctx *Context) {
+	for _, arg := range arg {
+		ctx = arg
+	}
+	if ctx == nil {
+		ctx = &Context{}
+	}
+	if ctx.MetaTreeStack == nil {
+		ctx.MetaTreeStack = &NameStacker{}
+	}
+	return
+}
+
+func (this *Context) RequestTime() time.Time {
+	return this.requestTime.In(this.TimeLocation())
+}
+
+func (this *Context) SetRequestTime(requestTime time.Time) {
+	this.requestTime = requestTime
+}
+
+func (this *Context) Now() time.Time {
+	return time.Now().In(this.TimeLocation())
+}
+
+func (this *Context) TimeLocation() *time.Location {
+	if this.timeLocation == nil && this.Request != nil {
+		if user := this.CurrentUser(); user != nil {
+			this.timeLocation = user.GetTimeLocation()
+		}
+		if this.timeLocation == nil {
+			if htl := this.Request.Header.Get("X-Time-Location"); htl != "" {
+				this.timeLocation, _ = time.LoadLocation(htl)
+			}
+		}
+		if this.timeLocation == nil {
+			if this.Site != nil {
+				this.timeLocation = this.Site.TimeLocation()
+			}
+			if this.timeLocation == nil {
+				this.timeLocation = time.Local
+			}
+		}
+	}
+
+	return this.timeLocation
+}
+
+func (this *Context) SetTimeLocation(timeLocation *time.Location) {
+	this.timeLocation = timeLocation
 }
 
 func (this *Context) Err() error {
@@ -129,6 +197,11 @@ func (this Context) WithContext(ctx context.Context) *Context {
 
 func (this *Context) SetValue(key, value interface{}) *Context {
 	this.values.Set(key, value)
+	return this
+}
+
+func (this *Context) DelValue(key interface{}) *Context {
+	this.values.Del(key)
 	return this
 }
 
@@ -299,7 +372,8 @@ func (this *Context) JoinCurrentURL(params ...interface{}) (joinedURL string, er
 
 // JoinURL is a convinent wrapper for qor/utils.JoinURL
 func (this *Context) JoinURL(url string, params ...interface{}) (joinedURL string, err error) {
-	return uurl.JoinURL(url, params...)
+	joinedURL, err = uurl.JoinURL(url, params...)
+	return
 }
 
 func (this *Context) GetLocale() string {
@@ -397,24 +471,29 @@ func (this *Context) Clone() *Context {
 // Clone clone current context
 func (this *Context) CloneBasic() *Context {
 	c := &Context{
-		LocalContext:  this.LocalContext,
-		Request:       this.Request,
-		Writer:        this.Writer,
-		StaticURL:     this.StaticURL,
-		Prefix:        this.Prefix,
-		OriginalURL:   this.OriginalURL,
-		db:            this.db,
-		Site:          this.Site,
-		Parent:        this.Parent,
-		currentUser:   this.currentUser,
-		Locale:        this.Locale,
-		TimeLocation:  this.TimeLocation,
-		I18nContext:   this.I18nContext,
-		Translator:    this.Translator,
-		NotFound:      this.NotFound,
-		Api:           this.Api,
-		logger:        this.logger,
-		DefaultLocale: this.DefaultLocale,
+		LocalContext:       this.LocalContext,
+		Request:            this.Request,
+		Writer:             this.Writer,
+		StaticURL:          this.StaticURL,
+		Prefix:             this.Prefix,
+		OriginalURL:        this.OriginalURL,
+		db:                 this.db,
+		Site:               this.Site,
+		Parent:             this.Parent,
+		currentUser:        this.currentUser,
+		Locale:             this.Locale,
+		Lang:               this.Lang,
+		LangTag:            this.LangTag,
+		timeLocation:       this.timeLocation,
+		I18nContext:        this.I18nContext,
+		Translator:         this.Translator,
+		NotFound:           this.NotFound,
+		Api:                this.Api,
+		logger:             this.logger,
+		DefaultLocale:      this.DefaultLocale,
+		MetaContextFactory: this.MetaContextFactory,
+		MetaTreeStack:      this.MetaTreeStack,
+		FormOptions:        this.FormOptions,
 	}
 	return c
 }
@@ -587,12 +666,14 @@ func (this *Context) Logger() logging.Logger {
 
 func (this *Context) Htmlify(value interface{}) template.HTML {
 	switch vt := value.(type) {
+	case template.HTML:
+		return vt
+	case string:
+		return template.HTML(vt)
 	case interface{ Htmlify() template.HTML }:
 		return vt.Htmlify()
 	case interface{ Htmlify(*Context) template.HTML }:
 		return vt.Htmlify(this)
-	case string:
-		return template.HTML(vt)
 	default:
 		return template.HTML(fmt.Sprint(vt))
 	}
@@ -616,4 +697,28 @@ func (this *Context) ErrorT(err error) error {
 
 func (this *Context) ErrorTS(err error) string {
 	return i18nmod.ErrorCtxS(this.GetI18nContext(), err)
+}
+
+type DecoderExclude struct {
+	ID   aorm.ID
+	Path string
+	Data interface{}
+}
+
+type DecoderExcludes struct {
+	Excludes []DecoderExclude
+}
+
+func (this *DecoderExcludes) Add(id aorm.ID, pth string, data interface{}) {
+	this.Excludes = append(this.Excludes, DecoderExclude{id, pth, data})
+}
+
+func (this *DecoderExcludes) HasItemOf(path string) bool {
+	path += "."
+	for _, e := range this.Excludes {
+		if strings.HasPrefix(e.Path, path) {
+			return true
+		}
+	}
+	return false
 }

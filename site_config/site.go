@@ -18,9 +18,12 @@ type Config struct {
 	Db           map[string]*dbconfig.DBConfig
 	MediaStorage map[string]map[string]interface{} `mapstructure:"media_storage"`
 	RootDir      string                            `mapstructure:"root_dir"`
+	HostNames    []string                          `mapstructure:"host_names"`
+	HostPath     string                            `mapstructure:"host_path"`
 	PublicURL    string                            `mapstructure:"public_url"`
 	StaticURL    string                            `mapstructure:"static_url"`
 	Locale       string                            `mapstructure:"locale"`
+	Lang         string                            `mapstructure:"lang"`
 	TimeLocation string                            `mapstructure:"time_location"`
 	Raw          maps.MapSI
 }
@@ -62,6 +65,8 @@ func (this *Config) Prepare(mainDBConfig map[string]*dbconfig.DBConfig, siteName
 		}
 		media["@storage"] = storage
 	}
+
+	delete(this.Db, "__loader")
 
 	for dbName, db := range this.Db {
 		db.Prepare(siteName, dbName, args)

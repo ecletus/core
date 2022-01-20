@@ -47,12 +47,12 @@ func IdToPrimaryQuery(ctx *core.Context, res Resourcer, exclude bool, id ...aorm
 				op = "NOT IN"
 			}
 
-			sqls = append(sqls, fmt.Sprintf("%v.%v"+op+" IN %v", scope.QuotedTableName(), scope.Quote(fields[0].DBName),
+			sqls = append(sqls, fmt.Sprintf("%v.%v"+op+" IN %v", scope.FromName(), scope.Quote(fields[0].DBName),
 				aorm.TupleQueryArgs(len(args))))
 		} else {
 			var fieldsSql []string
 			for _, field := range fields {
-				fieldsSql = append(fieldsSql, fmt.Sprintf("%v.%v = ?", scope.QuotedTableName(), scope.Quote(field.DBName)))
+				fieldsSql = append(fieldsSql, fmt.Sprintf("%v.%v = ?", scope.FromName(), scope.Quote(field.DBName)))
 			}
 			for range id {
 				sqls = append(sqls, "("+strings.Join(fieldsSql, " AND ")+")")
@@ -68,7 +68,7 @@ func IdToPrimaryQuery(ctx *core.Context, res Resourcer, exclude bool, id ...aorm
 			op = "<>"
 		}
 		for _, field := range fields {
-			sqls = append(sqls, fmt.Sprintf("%v.%v "+op+" ?", scope.QuotedTableName(), scope.Quote(field.DBName)))
+			sqls = append(sqls, fmt.Sprintf("%v.%v "+op+" ?", scope.FromName(), scope.Quote(field.DBName)))
 		}
 		query = strings.Join(sqls, " AND ")
 	}

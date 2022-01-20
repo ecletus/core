@@ -1,6 +1,8 @@
 package resource
 
 import (
+	"reflect"
+
 	"github.com/ecletus/core"
 	"github.com/moisespsena-go/aorm"
 )
@@ -31,7 +33,7 @@ type Metaor interface {
 	GetFieldName() string
 	GetFieldStruct() *aorm.StructField
 	GetSetter() func(resource interface{}, metaValue *MetaValue, context *core.Context) error
-	GetFormattedValuer() func(recorde interface{}, context *core.Context) interface{}
+	GetFormattedValuer() func(recorde interface{}, context *core.Context) *FormattedValue
 	GetValuer() func(recorde interface{}, context *core.Context) interface{}
 	GetContextResourcer() func(meta Metaor, context *core.Context) Resourcer
 	GetResource() Resourcer
@@ -41,14 +43,19 @@ type Metaor interface {
 	GetContextResource(context *core.Context) Resourcer
 	IsInline() bool
 	IsRequired() bool
+	RecordRequirer() func(ctx *core.Context, record interface{}) bool
 	IsZero(recorde, value interface{}) bool
 	GetLabelC(ctx *core.Context) string
 	Validators() []func(record interface{}, values *MetaValue, ctx *core.Context) (err error)
 	GetRecordLabelC(ctx *core.Context, record interface{}) string
 	Proxier() bool
 	IsAlone() bool
+	CanCollection() bool
 	IsSiblingsRequirementCheckDisabled() SiblingsRequirementCheckDisabled
+	IsLoadRelatedBeforeSave() bool
 	Record(record interface{}) interface{}
+	GetReflectStructValueOrInstantiate(record reflect.Value) reflect.Value
+	Severitify(fv *FormattedValue) *FormattedValue
 }
 
 // ConfigureMetaBeforeInitializeInterface if a struct's field's type implemented this interface, it will be called when initializing a meta
@@ -64,4 +71,11 @@ type ConfigureMetaInterface interface {
 // MetaConfigInterface meta configuration interface
 type MetaConfigInterface interface {
 	ConfigureMetaInterface
+}
+
+type ReadonlyMetaor interface {
+	Metaor
+
+	CanReadOnly() bool
+	Metaor() Metaor
 }

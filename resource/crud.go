@@ -5,24 +5,34 @@ import (
 	"fmt"
 	"reflect"
 
-	"github.com/ecletus/core"
-	"github.com/ecletus/roles"
-	"github.com/moisespsena-go/aorm"
 	"github.com/moisespsena-go/edis"
 	errwrap "github.com/moisespsena-go/error-wrap"
+
+	"github.com/ecletus/roles"
+
+	"github.com/ecletus/validations"
+
+	"github.com/ecletus/core"
+	"github.com/moisespsena-go/aorm"
 )
 
 type CRUD struct {
 	DefaultDenyMode bool
 	edis.EventDispatcher
-	dispatchers []edis.EventDispatcherInterface
-	res         Resourcer
-	context     *core.Context
-	metaValues  *MetaValues
-	parent      *CRUD
-	layout      LayoutInterface
-	Chan        interface{}
-	Recorde     interface{}
+	dispatchers       []edis.EventDispatcherInterface
+	res               Resourcer
+	context           *core.Context
+	metaValues        *MetaValues
+	parent            *CRUD
+	layout            LayoutInterface
+	customLayout      bool
+	Chan              interface{}
+	Recorde           interface{}
+	HasPermissionFunc func(mode roles.PermissionMode, ctx *core.Context) roles.Perm
+}
+
+func (this *CRUD) DefaultLayout() bool {
+	return !this.customLayout
 }
 
 func NewCrud(res Resourcer, ctx *core.Context) *CRUD {
@@ -89,6 +99,7 @@ func (this *CRUD) SetLayout(layout interface{}) *CRUD {
 	}
 	this = this.sub()
 	this.layout = l
+	this.customLayout = true
 	return this
 }
 
@@ -179,33 +190,35 @@ func (this *CRUD) FindOneBasic(key aorm.ID) (result BasicValuer, err error) {
 
 func (this *CRUD) FindOne(result interface{}, key ...aorm.ID) (err error) {
 	var (
-		context         = this.context.Clone()
-		primaryQuerySQL string
-		primaryParams   []interface{}
-		DB              = context.DB()
+		context = this.context.Clone()
+		id      ID
 	)
+	context.SetRawDB(context.DB().ModelStruct(this.Resource().GetModelStruct()))
+	DB := context.DB()
 
 	var hasKey bool
 
 	if this.res.HasKey() {
 		if len(key) > 0 && key[0] != nil {
-			if primaryQuerySQL, primaryParams, err = IdToPrimaryQuery(this.context, this.res, false, key[0]); err != nil {
-				return
-			}
-		} else if this.metaValues == nil {
-			if !context.ResourceID.IsZero() {
-				if primaryQuerySQL, primaryParams, err = IdToPrimaryQuery(this.context, this.res, false, context.ResourceID); err != nil {
+			id = key[0]
+		} else {
+			id = this.res.GetKey(result)
+			if id == nil || id.IsZero() {
+				if this.metaValues == nil {
+					if !context.ResourceID.IsZero() {
+						id = context.ResourceID
+					}
+				} else if id, err = MetaValuesToID(this.res, this.metaValues); err != nil {
 					return
 				}
 			}
-		} else if primaryQuerySQL, primaryParams, err = MetaValuesToPrimaryQuery(this.context, this.res, this.metaValues, false); err != nil {
-			return
 		}
-		if primaryQuerySQL != "" {
+
+		if id != nil && !id.IsZero() {
 			if this.metaValues != nil {
 				if destroy := this.metaValues.Get("_destroy"); destroy != nil {
-					if fmt.Sprint(destroy.Value) != "0" && this.res.HasPermission(roles.Delete, context).Ok(!this.DefaultDenyMode) {
-						DB.Delete(result, append([]interface{}{primaryQuerySQL}, primaryParams...)...)
+					if fmt.Sprint(destroy.Value) != "0" {
+						context.DecoderExcludes.Add(id, destroy.Parent.Path(), &ExcludeData{Res: this.res})
 						return ErrProcessorSkipLeft
 					}
 				}
@@ -223,7 +236,7 @@ func (this *CRUD) FindOne(result interface{}, key ...aorm.ID) (err error) {
 		}
 
 		DB = context.DB()
-		if err = DB.First(result, append([]interface{}{primaryQuerySQL}, primaryParams...)...).Error; err != nil {
+		if err = DB.Where(id).First(result).Error; err != nil {
 			this.triggerDBAction(e.error(err))
 			return
 		}
@@ -243,13 +256,18 @@ func (this *CRUD) FindOne(result interface{}, key ...aorm.ID) (err error) {
 		}
 		err = this.triggerDBAction(e.after())
 	} else {
-		return errors.New("failed to find: no key found")
+		return errors.New("CRUD.FindOne: failed to find: key is zero")
 	}
 
 	return
 }
 
 func (this *CRUD) Count(result interface{}) (err error) {
+	_, err = this.CountDB(result)
+	return err
+}
+
+func (this *CRUD) CountDB(result interface{}) (db *aorm.DB, err error) {
 	var (
 		context = this.context.Clone()
 		e       *DBEvent
@@ -257,15 +275,15 @@ func (this *CRUD) Count(result interface{}) (err error) {
 	e = NewDBEvent(E_DB_ACTION_COUNT, context.Clone())
 	e.SetResult(result)
 	if err = this.triggerDBAction(e.before()); err != nil {
-		return err
+		return nil, err
 	}
-	if err = e.Context.DB().Count(result).Error; err != nil {
+	if db = e.Context.DB().Count(result); db.Error != nil {
 		this.triggerDBAction(e.error(err))
-		return err
+		return db, db.Error
 	}
 
 	err = this.triggerDBAction(e.after())
-	return err
+	return
 }
 
 func (this *CRUD) FindMany(result interface{}) (err error) {
@@ -301,10 +319,19 @@ func (this *CRUD) FindMany(result interface{}) (err error) {
 	}
 	DB := e.Context.DB()
 	if !DB.HasOrder() {
-		DB = DB.Set("gorm:order_by_primary_key", "DESC")
+		if !DB.HasOrder() {
+			if orders := this.res.GetModelStruct().Orders; len(orders) > 0 {
+				DB = DB.Order(orders)
+			} else if order := this.res.DefaultPrimaryKeyOrder(); order != 0 {
+				DB = DB.Set("gorm:order_by_primary_key", order.String())
+			}
+		}
 	}
 
-	if err = DB.Find(result).Error; err != nil {
+	DB = DB.Find(result)
+	context.DB(DB)
+
+	if err = DB.Error; err != nil {
 		this.triggerDBAction(e.error(err))
 		return err
 	}
@@ -329,7 +356,7 @@ func (this *CRUD) Update(record interface{}, old ...interface{}) error {
 		if this.Resource().IsSingleton() || !aorm.ZeroIdOf(record) {
 			return this.CallUpdate(record, old...)
 		}
-		return errors.New("BID not set")
+		return errors.New("ID not set")
 	}
 	return roles.ErrPermissionDenied
 }
@@ -374,8 +401,8 @@ func (this *CRUD) callSave(recorde interface{}, eventName DBActionEvent, old ...
 	if eventName == E_DB_ACTION_CREATE {
 		err = DB.Create(recorde).Error
 	} else if len(old) > 0 && old[0] != nil {
-		//.Where(old[0])
-		db := DB.Model(recorde).Opt(aorm.OptStoreBlankField())
+		// .Where(old[0])
+		db := DB.Model(recorde).Opt(aorm.OptStoreBlankFields())
 		err = db.Update(recorde).Error
 	} else {
 		err = DB.Save(recorde).Error
@@ -383,7 +410,16 @@ func (this *CRUD) callSave(recorde interface{}, eventName DBActionEvent, old ...
 
 	if err != nil {
 		if d := aorm.GetDuplicateUniqueIndexError(err); d != nil {
-			return DuplicateUniqueIndexError{d, recorde, this.res}
+			res := this.res
+			for _, f := range d.PathFieldsNames() {
+				if m := res.GetMetas([]string{f}); len(m) == 1 {
+					res = m[0].GetResource()
+				} else {
+					res = nil
+					break
+				}
+			}
+			return DuplicateUniqueIndexError{d, recorde, res}
 		}
 		this.triggerDBAction(e.error(err))
 		return
@@ -417,7 +453,10 @@ func (this *CRUD) CallDelete(recorde interface{}) (err error) {
 			}
 
 			if err = db.Delete(recorde).Error; err != nil {
-				this.triggerDBAction(e.error(err))
+				if err = this.triggerDBAction(e.error(err)); err != nil {
+					return
+				}
+
 			}
 
 			err = this.triggerDBAction(e.after())
@@ -442,10 +481,13 @@ func (this *CRUD) triggerDBAction(e *DBEvent) (err error) {
 
 	for i, d := range this.dispatchers {
 		if err = d.Trigger(e); err != nil {
+			if validations.IsError(err) {
+				return
+			}
 			return errwrap.Wrap(err, "Dispatcher %d", i)
 		}
 	}
-	return nil
+	return e.DBError
 }
 
 func (this *CRUD) recorde(r interface{}) func() {
@@ -456,6 +498,9 @@ func (this *CRUD) recorde(r interface{}) func() {
 	}
 }
 
-func (this *CRUD) HasPermission(mode roles.PermissionMode) bool {
-	return this.res.HasPermission(mode, this.context).Ok(!this.DefaultDenyMode)
+func (this *CRUD) HasPermission(mode roles.PermissionMode, ctxN ...*core.Context) bool {
+	var ctx = this.context
+	for _, ctx = range ctxN {
+	}
+	return this.res.HasPermission(mode, ctx).Ok(!this.DefaultDenyMode)
 }

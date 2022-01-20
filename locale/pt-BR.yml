@@ -1,2 +1,5 @@
 errors:
   cant_be_blank: "<b>%s</b> não pode ser vazio"
+  cant_be_blank_one_of.tgo: >-
+    <?= join({fmt: "<b>%s</b>", sep: ", ", and: " ou "}, data...) ?> não pode ser vazio
+

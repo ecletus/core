@@ -12,14 +12,16 @@ import (
 )
 
 // Errors is a struct that used to hold errors array
-type Errors struct {
-	errors []error
-}
+type Errors []error
 
 func NewErrors(e ...error) (errors *Errors) {
 	errors = &Errors{}
 	errors.AddError(e...)
 	return
+}
+
+func (errs Errors) Len() int {
+	return len(errs)
 }
 
 // error get formatted error message
@@ -32,13 +34,13 @@ func (errs *Errors) AddError(errors ...error) error {
 	for _, err := range errors {
 		if err != nil {
 			if e, ok := err.(errorsInterface); ok {
-				errs.errors = append(errs.errors, e.GetErrors()...)
+				*errs = append(*errs, e.GetErrors()...)
 			} else {
-				errs.errors = append(errs.errors, err)
+				*errs = append(*errs, err)
 			}
 		}
 	}
-	if len(errs.errors) > 0 {
+	if len(*errs) > 0 {
 		return errs
 	}
 	return nil
@@ -46,28 +48,28 @@ func (errs *Errors) AddError(errors ...error) error {
 
 // HasError return has error or not
 func (errs Errors) HasError() bool {
-	return len(errs.errors) != 0
+	return len(errs) != 0
 }
 
 // GetErrors return error array
 func (errs Errors) GetErrors() []error {
-	return errs.errors
+	return errs
 }
 
 // ExcludeError exclude errors when match matcher and returns new Errors with not mached errors
-func (errs Errors) ExcludeError(matcher func(err error) (exclude bool)) Errors {
+func (errs Errors) Filter(matcher func(err error) error) Errors {
 	var newErrors Errors
-	for _, err := range errs.errors {
-		if !matcher(err) {
-			newErrors.errors = append(newErrors.errors, err)
+	for _, err := range errs {
+		if filtered := matcher(err); filtered != nil {
+			newErrors = append(newErrors, filtered)
 		}
 	}
 	return newErrors
 }
 
 func (errs Errors) String() string {
-	var strs = make([]string, len(errs.errors))
-	for i, err := range errs.errors {
+	var strs = make([]string, len(errs))
+	for i, err := range errs {
 
 		strs[i] = StringifyError(err)
 	}
@@ -75,8 +77,8 @@ func (errs Errors) String() string {
 }
 
 func (errs Errors) GetErrorsT(ctx i18nmod.Context) (l []error) {
-	l = make([]error, len(errs.errors))
-	for i, err := range errs.errors {
+	l = make([]error, len(errs))
+	for i, err := range errs {
 		switch et := err.(type) {
 		case i18nmod.TError:
 			l[i] = errors.New(et.Translate(ctx))
@@ -88,8 +90,8 @@ func (errs Errors) GetErrorsT(ctx i18nmod.Context) (l []error) {
 }
 
 func (errs Errors) GetErrorsTS(ctx i18nmod.Context) (strs []string) {
-	strs = make([]string, len(errs.errors))
-	for i, err := range errs.errors {
+	strs = make([]string, len(errs))
+	for i, err := range errs {
 		strs[i] = StringifyErrorT(ctx, err)
 	}
 	return
@@ -97,6 +99,10 @@ func (errs Errors) GetErrorsTS(ctx i18nmod.Context) (strs []string) {
 
 func (errs Errors) StringT(ctx i18nmod.Context) string {
 	return strings.Join(errs.GetErrorsTS(ctx), "\n -")
+}
+
+func (errs *Errors) Reset() {
+	errs = nil
 }
 
 type errorsInterface interface {
@@ -138,5 +144,6 @@ func (this err) Error() string {
 
 const (
 	// ErrCantBeBlank cant blank field
-	ErrCantBeBlank err = "cant be blank"
+	ErrCantBeBlank      err = "cant be blank"
+	ErrCantBeBlankOneOf err = "cant be blank one of"
 )

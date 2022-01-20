@@ -3,9 +3,10 @@ package resource
 import (
 	"fmt"
 
+	"github.com/ecletus/validations"
+
 	"github.com/ecletus/core"
 	"github.com/ecletus/core/utils"
-	"github.com/ecletus/validations"
 	"github.com/moisespsena-go/aorm"
 )
 

@@ -11,6 +11,13 @@ import (
 	"github.com/moisespsena-go/aorm"
 )
 
+type contextKey string
+
+const (
+	AutoLoadLinkDisabled contextKey = "autoload_link_disabled"
+	AutoLoadDisabled     contextKey = "autoload_disabled"
+)
+
 func setupValuer(meta *Meta, fieldName string, record interface{}) {
 	nestedField := strings.Contains(fieldName, ".")
 
@@ -59,6 +66,9 @@ func setupValuer(meta *Meta, fieldName string, record interface{}) {
 					recordReflectValue = reflect.Indirect(reflect.ValueOf(record))
 					fieldValue         reflect.Value
 				)
+				if !recordReflectValue.IsValid() {
+					return nil
+				}
 
 				if modelStruct == nil {
 					// TODO: not mapped field
@@ -71,41 +81,129 @@ func setupValuer(meta *Meta, fieldName string, record interface{}) {
 						}
 						recordReflectValue = reflect.Indirect(recordReflectValue)
 					}
+
 					if fieldValue = recordReflectValue.FieldByIndex(field.StructIndex); !fieldValue.IsValid() {
 						return nil
 					}
 				}
 
 				if rel := field.Relationship; rel != nil && recordReflectValue.CanAddr() && !field.IsChild {
-					var (
-						recordValueInterface = recordReflectValue.Addr().Interface()
-						ID                   = modelStruct.GetID(recordValueInterface)
-					)
-					if ID != nil && !ID.IsZero() {
-						var DB = context.DB()
-						if rel.Kind == "has_many" || rel.Kind == "many_to_many" {
+					recordPtr := recordReflectValue.Addr()
+					recordValueInterface := recordPtr.Interface()
+
+					if rel.Kind.Is(aorm.BELONGS_TO) {
+						if fieldValue.Kind() == reflect.Ptr {
 							if fieldValue.IsNil() {
+								if context == nil {
+									return nil
+								}
+								relID := rel.GetRelatedID(record)
+								if relID.IsZero() {
+									return nil
+								}
+								if fieldValue.Kind() == reflect.Ptr && fieldValue.IsNil() {
+									fieldValue.Set(reflect.New(fieldValue.Type().Elem()))
+								}
+								if context.Flag(AutoLoadDisabled) {
+									v := fieldValue.Interface()
+									relID.SetTo(v)
+									return v
+								}
+							} else {
+								return fieldValue.Interface()
+							}
+						} else if context == nil {
+							return nil
+						}
+
+						if fieldID := field.Model.GetID(fieldValue.Interface()); fieldID.IsZero() {
+							relatedValue := reflect.Indirect(fieldValue).Addr().Interface()
+							var DB = context.DB().New()
+							DB = DB.ModelStruct(modelStruct, recordValueInterface).Association(field.Name).DB().Unscoped()
+							if err := DB.Error; err != nil {
+								aorm.SetZero(fieldValue)
+								if err != aorm.ErrBlankRelatedKey {
+									context.AddError(errors.Wrapf(err, "meta preload related field %q", meta.FieldName))
+								}
+							} else if err = DB.First(relatedValue).Error; err != nil {
+								if aorm.IsRecordNotFoundError(err) {
+									aorm.SetZero(fieldValue)
+								} else {
+									context.AddError(errors.Wrapf(err, "meta preload related field %q", meta.FieldName))
+								}
+							}
+							return relatedValue
+						}
+						return fieldValue.Interface()
+					} else if ID := modelStruct.GetID(recordValueInterface); ID != nil && !ID.IsZero() {
+						if rel.Kind.Is(aorm.HAS_MANY, aorm.M2M) {
+							if fieldValue.IsNil() {
+								if context == nil {
+									return nil
+								}
+								var DB = context.DB().New()
 								DB = DB.ModelStruct(modelStruct, recordValueInterface)
 								if err := DB.Association(field.Name).Find(fieldValue.Addr().Interface()).Error(); err != nil {
 									panic(err)
 								}
 							}
-						} else if rel.Kind == "has_one" || rel.Kind == "belongs_to" {
+
+							if deletedIDs := SliceMetaGetDeleted(recordPtr, fieldName); deletedIDs != nil {
+								val := &SliceValue{
+									DeletedID: deletedIDs,
+								}
+								if fieldValue.Len() > 0 {
+									val.Current = fieldValue.Interface()
+								}
+								var (
+									deleted = reflect.New(fieldValue.Type())
+									assoc   = context.DB().New().ModelStruct(modelStruct, recordValueInterface).Association(field.Name)
+								)
+								deleted.Elem().Set(reflect.MakeSlice(fieldValue.Type(), len(deletedIDs), len(deletedIDs)))
+								assoc.Find(&aorm.RelatedResult{
+									Result: deleted.Interface(),
+									Prepare: func(db *aorm.DB) *aorm.DB {
+										return db.Where(aorm.InID(deletedIDs...))
+									},
+								})
+								deleted = deleted.Elem()
+								if deleted.Len() > 0 {
+									val.Deleted = deleted.Interface()
+								}
+
+								if val.Current != nil || val.Deleted != nil {
+									return val
+								}
+							}
+						} else if rel.Kind.Is(aorm.HAS_ONE, aorm.BELONGS_TO) {
 							if fieldValue.Kind() == reflect.Ptr && fieldValue.IsNil() {
+								if context == nil {
+									return nil
+								}
 								if rel.GetRelatedID(record).IsZero() {
 									return nil
 								}
 								if fieldValue.Kind() == reflect.Ptr && fieldValue.IsNil() {
 									fieldValue.Set(reflect.New(fieldValue.Type().Elem()))
 								}
+							} else if context == nil {
+								return nil
 							}
 
 							if fieldID := field.Model.GetID(fieldValue.Interface()); fieldID.IsZero() {
 								relatedValue := reflect.Indirect(fieldValue).Addr().Interface()
-								DB = DB.ModelStruct(modelStruct, recordValueInterface)
-								if err := DB.Association(field.Name).Find(relatedValue).Error(); err != nil {
-									if !aorm.IsRecordNotFoundError(err) {
-										context.AddError(errors.Wrapf(err, "inline preload related field %q", meta.FieldName))
+								var DB = context.DB().New()
+								DB = DB.ModelStruct(modelStruct, recordValueInterface).Association(field.Name).DB().Unscoped()
+								if err := DB.Error; err != nil {
+									aorm.SetZero(fieldValue)
+									if err != aorm.ErrBlankRelatedKey {
+										context.AddError(errors.Wrapf(err, "meta preload related field %q", meta.FieldName))
+									}
+								} else if err = DB.First(relatedValue).Error; err != nil {
+									if aorm.IsRecordNotFoundError(err) {
+										aorm.SetZero(fieldValue)
+									} else {
+										context.AddError(errors.Wrapf(err, "meta preload related field %q", meta.FieldName))
 									}
 								}
 							}
@@ -113,9 +211,55 @@ func setupValuer(meta *Meta, fieldName string, record interface{}) {
 					} else if fieldValue.Kind() == reflect.Ptr && fieldValue.IsNil() {
 						return nil
 					}
+				} else if link := field.Link; link != nil {
+					if fieldValue.IsNil() {
+						if context == nil {
+							return nil
+						}
+
+						if context.Flag(AutoLoadLinkDisabled) {
+							return nil
+						}
+
+						var (
+							recordValueInterface = recordReflectValue.Addr().Interface()
+							ID                   = modelStruct.GetID(recordValueInterface)
+						)
+
+						if ID.IsZero() {
+							return nil
+						}
+
+						if fieldValue.Kind() == reflect.Ptr && fieldValue.IsNil() {
+							if fieldValue.Kind() == reflect.Ptr && fieldValue.IsNil() {
+								fieldValue.Set(reflect.New(fieldValue.Type().Elem()))
+							}
+						}
+
+						relatedValue := reflect.Indirect(fieldValue).Addr().Interface()
+
+						var DB = context.DB().New().Unscoped()
+
+						DB = link.Load(field, DB, ID, relatedValue, aorm.LinkFlagTagColumnsSelector)
+						if err := DB.Error; err != nil {
+							aorm.SetZero(fieldValue)
+							if !aorm.IsRecordNotFoundError(err) {
+								context.AddError(errors.Wrapf(err, "meta preload related field %q", meta.FieldName))
+							}
+						}
+					}
 				}
 
+				switch fieldValue.Kind() {
+				case reflect.Ptr:
+					if fieldValue.IsNil() {
+						return nil
+					}
+				case reflect.Struct:
+					fieldValue = fieldValue.Addr()
+				}
 				value := fieldValue.Interface()
+
 				if v, ok := value.(MetaValuer); ok {
 					return v.MetaValue()
 				}

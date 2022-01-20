@@ -72,8 +72,8 @@ type DB struct {
 	Config        *dbconfig.DBConfig
 	Name          string
 	DB            *aorm.DB
-	//Raw           *RawDB
-	open          func() (DB *aorm.DB, err error)
+	// Raw           *RawDB
+	open func(ctx context.Context) (DB *aorm.DB, err error)
 }
 
 func (db *DB) InitCallback(cb ...func(DB *DB)) {
@@ -85,7 +85,7 @@ func (db *DB) InitCallback(cb ...func(DB *DB)) {
 	}
 }
 
-func (db *DB) Open() (err error) {
+func (db *DB) Open(ctx context.Context) (err error) {
 	if db.DB != nil {
 		return fmt.Errorf("DB %q for site %q is open", db.Name, db.Site.Name())
 	}
@@ -96,7 +96,7 @@ func (db *DB) Open() (err error) {
 			}
 		}
 	}
-	db.DB, err = db.open()
+	db.DB, err = db.open(ctx)
 	if err != nil {
 		return errwrap.Wrap(err, "Open DB %q for site %q failed", db.Name, db.Site.Name())
 	}
@@ -118,9 +118,9 @@ func (db *DB) Close() (err error) {
 	return
 }
 
-func (db *DB) ReOpen() (err error) {
+func (db *DB) ReOpen(ctx context.Context) (err error) {
 	if err = db.Close(); err == nil {
-		err = db.Open()
+		err = db.Open(ctx)
 	}
 	return
 }

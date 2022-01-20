@@ -11,10 +11,10 @@ import (
 	"text/template"
 	"time"
 
+	"github.com/apex/log"
 	"github.com/ecletus/roles"
 	"github.com/moisespsena-go/logging"
-
-	"github.com/apex/log"
+	"golang.org/x/text/message"
 
 	"github.com/moisespsena-go/maps"
 
@@ -35,16 +35,24 @@ import (
 
 type SiteConfigType uint8
 
+var DefaultLang = "pt"
+
 const (
 	SiteConfigBasic SiteConfigType = iota
 	SiteConfigContextFactory
+
+	SiteInitOptionsKey = "core:site_init_options"
 )
+
+type SiteInitOptions struct {
+	DBAutoConnectDisabled bool
+}
 
 type Site struct {
 	name                    string
 	timeLocation            *time.Location
-	configGetter            getters.Getter
-	ConfigSetter            ConfigSetter
+	configGetter            ConfigGetter
+	configSetter            ConfigSetter
 	basicConfig             site_config.Config
 	Dbs                     map[string]*DB
 	mediaStorages           map[string]oss.NamedStorageInterface
@@ -64,10 +72,21 @@ type Site struct {
 	role                   *roles.Role
 }
 
-func NewSite(name string, basicConfig site_config.Config, configGetter getters.Getter, cf *ContextFactory) *Site {
+func (this *Site) ConfigSetter() ConfigSetter {
+	return this.configSetter
+}
+
+func (this *Site) SetConfigSetter(configSetter ConfigSetter) {
+	this.configSetter = configSetter
+}
+
+func NewSite(name string, basicConfig site_config.Config, configGetter getters.InterfaceGetter, cf *ContextFactory) *Site {
+	getter := MapstructureRawGetter2InterfaceGetter(basicConfig.Raw.Getter(), func(key, value, dest interface{}, err error) {
+		log.Errorf("site %q: decode config %q => '%s' into %T failed: %s", name, key, dest, err.Error())
+	})
 	s := &Site{
 		name:           name,
-		configGetter:   getters.MultipleGetter{configGetter, basicConfig.Raw.Getter()},
+		configGetter:   getters.MultipleGetter{configGetter, getter},
 		contextFactory: cf,
 		basicConfig:    basicConfig,
 		Dbs:            make(map[string]*DB),
@@ -135,13 +154,17 @@ func (this *Site) GetConfig(key interface{}) (value interface{}, ok bool) {
 	return this.configGetter.Get(key)
 }
 
+func (this *Site) GetConfigInterface(key, dest interface{}) (ok bool) {
+	return this.configGetter.GetInterface(key, dest)
+}
+
 func (this *Site) MustConfig(key interface{}) (value interface{}) {
 	value, _ = this.configGetter.Get(key)
 	return
 }
 
 func (this *Site) SetConfig(key string, value interface{}) (err error) {
-	return this.ConfigSetter.Set(key, value)
+	return this.configSetter.Set(key, value)
 }
 
 type SetupDB func(setup func(db *DB) error) (err error)
@@ -156,9 +179,9 @@ func (this *Site) BasicConfig() *site_config.Config {
 
 func (this *Site) Config() SiteConfig {
 	return &struct {
-		getters.Getter
+		getters.InterfaceGetter
 		ConfigSetter
-	}{this.configGetter, this.ConfigSetter}
+	}{this.configGetter, this.configSetter}
 }
 
 func (this *Site) Name() string {
@@ -169,7 +192,7 @@ func (this *Site) Title() string {
 	return this.basicConfig.Title
 }
 
-func (this *Site) Init() (err error) {
+func (this *Site) Init(opts *SiteInitOptions) (err error) {
 	this.mediaStorages["default"] = &oss.NamedStorage{this.systemStorage, "default"}
 	if this.basicConfig.MediaStorage != nil {
 		for name, storageConfig := range this.basicConfig.MediaStorage {
@@ -177,7 +200,7 @@ func (this *Site) Init() (err error) {
 		}
 	}
 
-	if this.basicConfig.Db != nil {
+	if this.basicConfig.Db != nil && !opts.DBAutoConnectDisabled {
 		for name, dbConfig := range this.basicConfig.Db {
 			func(dbConfig *dbconfig.DBConfig) {
 				var d *DB
@@ -185,21 +208,22 @@ func (this *Site) Init() (err error) {
 					Site:   this,
 					Config: dbConfig,
 					Name:   name,
-					open: func() (DB *aorm.DB, err error) {
-						if DB, err = db.SystemFactories.Factory(dbConfig); err == nil {
+					open: func(ctx context.Context) (DB *aorm.DB, err error) {
+						if DB, err = db.SystemFactories.Factory(ctx, dbConfig); err == nil {
 							DB = DB.Inside(PREFIX+".site["+this.Name()+"]", "DB["+name+"]").Set(PREFIX+".site", this).Set(PREFIX+".db", d)
 						}
-						if dbConfig.CommitDisabled {
-							DB = DB.Opt(aorm.OptCommitDisabled())
+						if dbConfig.DryRun {
+							DB = DB.Opt(aorm.OptDryCommit())
 						}
+						DB.Location = this.timeLocation
 						return
 					},
 				}
 
-				if err := d.Open(); err != nil {
+				if err := d.Open(context.Background()); err != nil {
 					panic(err)
 				}
-				//d.Raw = &RawDB{DB: d}
+				// d.Raw = &RawDB{DB: d}
 				this.Dbs[name] = d
 			}(dbConfig)
 		}
@@ -217,8 +241,8 @@ func (this *Site) Init() (err error) {
 	return
 }
 
-func (this *Site) InitOrPanic() *Site {
-	err := this.Init()
+func (this *Site) InitOrPanic(opts *SiteInitOptions) *Site {
+	err := this.Init(opts)
 	if err != nil {
 		this.Log.Errorf("Init this %q failed: %v", this.Name(), err)
 	}
@@ -308,7 +332,21 @@ func (this *Site) PrepareContext(ctx *Context) *Context {
 			ctx.StaticURL += "/static"
 		}
 	}
+
+	if ctx.Lang == "" {
+		lang, _ := ctx.Request.Cookie("lang")
+		accept := ctx.Request.Header.Get("Accept-Language")
+
+		fallback := this.basicConfig.Lang
+		if fallback == "" {
+			fallback = DefaultLang
+		}
+		tag := message.MatchLanguage(lang.String(), accept, fallback)
+		ctx.LangTag = &tag
+	}
+
 	ctx.Role = this.role.Copy()
+	ctx.SetRequestTime(time.Now())
 	ctx.SetDB(DB.Set(CONTEXT_KEY, ctx))
 	return ctx
 }
@@ -335,7 +373,7 @@ func (this *Site) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 }
 
 func (this *Site) NewContext() *Context {
-	return this.PrepareContext(&Context{})
+	return this.PrepareContext(NewContext())
 }
 
 func (this *Site) PublicURL(p ...string) string {

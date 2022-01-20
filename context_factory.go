@@ -11,7 +11,7 @@ import (
 )
 
 type ContextFactory struct {
-	Translator *i18nmod.Translator
+	Translator           *i18nmod.Translator
 	afterCreateCallbacks []func(ctx *Context)
 }
 
@@ -43,13 +43,13 @@ func (cf *ContextFactory) NewContextForRequest(req *http.Request, prefix ...stri
 	}
 
 	if parent == nil {
-		ctx = &Context{
+		ctx = NewContext(&Context{
 			ContextFactory: cf,
 			OriginalURL:    URL,
 			StaticURL:      stringOrDefault(rctx.Value("STATIC_URL")),
 			Translator:     cf.Translator,
 			DefaultLocale:  cf.Translator.DefaultLocale,
-		}
+		})
 		ctx.SetRequest(req)
 		ctx.AsTop()
 		if len(prefix) > 0 && prefix[0] != "" {

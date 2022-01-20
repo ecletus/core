@@ -1,6 +1,7 @@
 package core
 
 import (
+	"fmt"
 	"sync"
 
 	"github.com/moisespsena-go/getters"
@@ -16,20 +17,55 @@ var (
 )
 
 type SitesRegister struct {
-	Alone                   bool
-	ByName                  SitesMap
-	ByHost                  SitesMap
-	ByPath                  SitesMap
-	AddedCallbacks          []func(site *Site)
-	PostAddedCallbacks      []func(site *Site)
-	DeletedCallbacks        []func(site *Site)
-	HostAddedCallbacks      []func(site *Site, host string)
-	HostDeletedCallbacks    []func(site *Site, host string)
-	PathAddedCallbacks      []func(site *Site, pth string)
-	PathDeletedCallbacks    []func(site *Site, pth string)
-	SiteConfigGetter        MultipleSiteGetter
-	SiteConfigSetterFactory SiteConfigSetterFacotry
-	mu                      sync.RWMutex
+	Alone                            bool
+	ByName                           SitesMap
+	ByHost                           SitesMap
+	ByPath                           SitesMap
+	AddedCallbacks                   []func(site *Site)
+	PostAddedCallbacks               []func(site *Site)
+	DeletedCallbacks                 []func(site *Site)
+	HostAddedCallbacks               []func(site *Site, host string)
+	HostDeletedCallbacks             []func(site *Site, host string)
+	PathAddedCallbacks               []func(site *Site, pth string)
+	PathDeletedCallbacks             []func(site *Site, pth string)
+	SiteConfigGetter                 MultipleSiteGetter
+	siteConfigSetterFactory          SiteConfigSetterFacotry
+	siteConfigSetterFactoryCallbacks []func(cb SiteConfigSetterFacotry)
+	mu                               sync.RWMutex
+}
+
+func (this *SitesRegister) SiteConfigSetterFactoryCallbacks() []func(cb SiteConfigSetterFacotry) {
+	return this.siteConfigSetterFactoryCallbacks
+}
+
+func (this *SitesRegister) SetSiteConfigSetterFactoryCallbacks(siteConfigSetterFactoryCallbacks []func(cb SiteConfigSetterFacotry)) {
+	this.siteConfigSetterFactoryCallbacks = siteConfigSetterFactoryCallbacks
+}
+
+func (this *SitesRegister) OnSetSiteConfigSetterFactory(cb ...func(cb SiteConfigSetterFacotry)) {
+	this.siteConfigSetterFactoryCallbacks = append(this.siteConfigSetterFactoryCallbacks, cb...)
+	if this.siteConfigSetterFactory != nil {
+		for _, cb := range cb {
+			cb(this.siteConfigSetterFactory)
+		}
+	}
+}
+
+func (this *SitesRegister) SiteConfigSetterFactory() SiteConfigSetterFacotry {
+	return this.siteConfigSetterFactory
+}
+
+func (this *SitesRegister) SetSiteConfigSetterFactory(siteConfigSetterFactory SiteConfigSetterFacotry) {
+	this.siteConfigSetterFactory = siteConfigSetterFactory
+	for _, cb := range this.siteConfigSetterFactoryCallbacks {
+		cb(siteConfigSetterFactory)
+	}
+	this.ByName.Each(func(site *Site) error {
+		if site.configSetter == nil {
+			site.SetConfigSetter(siteConfigSetterFactory.Factory(site))
+		}
+		return nil
+	})
 }
 
 func (this *SitesRegister) OnAdd(f ...func(site *Site)) *SitesRegister {
@@ -234,16 +270,21 @@ func (this *SitesRegister) Add(site *Site) (err error) {
 
 	if !site.IsRegistered() {
 		var configGetter getters.MultipleGetter
-		configGetter.Append(getters.New(func(key interface{}) (value interface{}, ok bool) {
-			return this.SiteConfigGetter.Get(site, key)
-		}))
+		configGetter.Append(&getters.InterfaceGetterImpl{
+			getters.New(func(key interface{}) (value interface{}, ok bool) {
+				return this.SiteConfigGetter.Get(site, key)
+			}),
+			func(key, dest interface{}) (ok bool) {
+				return this.SiteConfigGetter.GetInterface(site, key, dest)
+			},
+		})
 		if site.configGetter != nil {
 			configGetter.Append(site.configGetter)
 		}
 		site.configGetter = configGetter
 
-		if site.ConfigSetter == nil && this.SiteConfigSetterFactory != nil {
-			site.ConfigSetter = this.SiteConfigSetterFactory.Factory(site)
+		if site.configSetter == nil && this.siteConfigSetterFactory != nil {
+			site.SetConfigSetter(this.siteConfigSetterFactory.Factory(site))
 		}
 
 		defer func() {
@@ -260,6 +301,16 @@ func (this *SitesRegister) Add(site *Site) (err error) {
 	}
 
 	this.ByName.Set(site.name, site)
+
+	for _, hostName := range site.basicConfig.HostNames {
+		if hostName != "" {
+			if s, ok := this.ByHost.Get(hostName); ok {
+				return fmt.Errorf("Register site %q failed: hostname %q has be registered for %q site", site.name, hostName, s.name)
+			}
+			this.ByHost.Set(hostName, site)
+		}
+	}
+
 	for _, f := range this.AddedCallbacks {
 		f(site)
 	}

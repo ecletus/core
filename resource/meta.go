@@ -49,23 +49,24 @@ func (meta *MetaName) GetEncodedNameOrDefault() string {
 type FContextResourcer = func(meta Metaor, context *core.Context) Resourcer
 type FSetter = func(resource interface{}, metaValue *MetaValue, context *core.Context) error
 type FValuer = func(interface{}, *core.Context) interface{}
-type FFormattedValuer = func(interface{}, *core.Context) interface{}
+type FFormattedValuer = func(interface{}, *core.Context) *FormattedValue
 
 // Meta meta struct definition
 type Meta struct {
 	*MetaName
-	Alias                 *MetaName
-	FieldName             string
-	FieldStruct           *aorm.StructField
-	ContextResourcer      FContextResourcer
-	Setter                FSetter
-	Valuer                FValuer
-	FormattedValuer       FFormattedValuer
-	Config                MetaConfigInterface
-	BaseResource          Resourcer
-	Resource              Resourcer
-	Permission            *roles.Permission
-	Help                  string
+	Alias                      *MetaName
+	FieldName                  string
+	FieldStruct                *aorm.StructField
+	ContextResourcer           FContextResourcer
+	Setter                     FSetter
+	Valuer                     FValuer
+	GetRecordHandler           func(ctx *core.Context, record interface{}) interface{}
+	FormattedValuer            FFormattedValuer
+	Config                     MetaConfigInterface
+	BaseResource               Resourcer
+	Resource                   Resourcer
+	Permission                 *roles.Permission
+	Help                       string
 	HelpLong                   string
 	SaveID                     bool
 	Inline                     bool
@@ -77,6 +78,21 @@ type Meta struct {
 	UIValidatorFunc            func(ctx *core.Context, recorde interface{}) string
 	LoadRelatedBeforeSave      bool
 	DisableSiblingsRequirement SiblingsRequirementCheckDisabled
+	IsCollection               bool
+	Permissioners              []core.Permissioner
+
+	Severity       core.Severity
+	SeveritifyFunc func(fv *FormattedValue)
+
+	DefaultDeny bool
+}
+
+func (this *Meta) IsLoadRelatedBeforeSave() bool {
+	return this.LoadRelatedBeforeSave
+}
+
+func (this *Meta) DefaultPermissionDeny() bool {
+	return this.DefaultDeny
 }
 
 func (this *Meta) Record(record interface{}) interface{} {
@@ -84,12 +100,17 @@ func (this *Meta) Record(record interface{}) interface{} {
 	if len(ix) == 1 {
 		return record
 	}
-	ix = ix[0:len(ix)-1]
+	ix = ix[0 : len(ix)-1]
 	recordValue := reflect.Indirect(reflect.ValueOf(record)).FieldByIndex(ix)
 	if recordValue.Kind() != reflect.Ptr {
 		recordValue = recordValue.Addr()
 	}
 	return recordValue.Interface()
+}
+
+func (this *Meta) GetReflectStructValueOrInstantiate(record reflect.Value) reflect.Value {
+	recordValue := record.FieldByIndex(this.FieldStruct.StructIndex)
+	return recordValue
 }
 
 func (this *Meta) Proxier() bool {
@@ -98,6 +119,10 @@ func (this *Meta) Proxier() bool {
 
 func (this *Meta) IsAlone() bool {
 	return false
+}
+
+func (this *Meta) CanCollection() bool {
+	return this.IsCollection || (this.FieldStruct != nil && this.FieldStruct.Struct.Type.Kind() == reflect.Slice)
 }
 
 func (this *Meta) IsSiblingsRequirementCheckDisabled() SiblingsRequirementCheckDisabled {
@@ -159,6 +184,10 @@ func (this *Meta) IsRequired() bool {
 	return this.Required
 }
 
+func (this *Meta) RecordRequirer() func(ctx *core.Context, record interface{}) bool {
+	return nil
+}
+
 // GetBaseResource get base resource from meta
 func (this *Meta) GetBaseResource() Resourcer {
 	return this.BaseResource
@@ -181,7 +210,7 @@ func (this *Meta) GetContextResource(context *core.Context) Resourcer {
 	return this.Resource
 }
 
-func (this *Meta) GetContextMetas(recort interface{}, context *core.Context) (metas []Metaor) {
+func (this *Meta) GetContextMetas(record interface{}, context *core.Context) (metas []Metaor) {
 	return this.GetContextResource(context).GetMetas([]string{})
 }
 
@@ -223,25 +252,44 @@ func (this *Meta) SetValuer(fc func(interface{}, *core.Context) interface{}) {
 	this.Valuer = fc
 }
 
+func (this *Meta) Severitify(fv *FormattedValue) *FormattedValue {
+	if fv.Severity != 0 {
+		return fv
+	}
+	if this.SeveritifyFunc != nil {
+		this.SeveritifyFunc(fv)
+	}
+	if fv.Severity == 0 {
+		fv.Severity = this.Severity
+	}
+	return fv
+}
+
 // GetFormattedValuer get formatted valuer from meta
-func (this *Meta) GetFormattedValuer() func(interface{}, *core.Context) interface{} {
+func (this *Meta) GetFormattedValuer() func(interface{}, *core.Context) *FormattedValue {
 	if this.FormattedValuer != nil {
 		return this.FormattedValuer
 	}
-	return this.Valuer
+	return func(r interface{}, context *core.Context) *FormattedValue {
+		return this.Severitify(&FormattedValue{Record: r, Raw: this.GetValuer()(r, context), IsZeroF: this.IsZero})
+	}
 }
 
 // SetFormattedValuer set formatted valuer for meta
-func (this *Meta) SetFormattedValuer(fc func(interface{}, *core.Context) interface{}) {
+func (this *Meta) SetFormattedValuer(fc func(interface{}, *core.Context) *FormattedValue) {
 	this.FormattedValuer = fc
 }
 
-// HasContextPermission check has permission or not
+// AdminHasContextPermission check has permission or not
 func (this *Meta) HasPermission(mode roles.PermissionMode, context *core.Context) (perm roles.Perm) {
 	if this.Permission == nil {
 		return
 	}
 	return this.Permission.HasPermission(context, mode, context.Roles.Interfaces()...)
+}
+
+func (this *Meta) Permissioner(p ...core.Permissioner) {
+	this.Permissioners = append(this.Permissioners, p...)
 }
 
 // SetPermission set permission for meta
@@ -256,20 +304,25 @@ func (this *Meta) PreInitialize() error {
 	} else if this.FieldName == "" {
 		this.FieldName = this.Name
 	}
-	if this.FieldStruct = this.BaseResource.GetModelStruct().FieldByPath(this.FieldName); this.FieldStruct != nil {
-		this.Typ = this.FieldStruct.Struct.Type
+	if this.Typ == nil {
+		if this.FieldStruct = this.BaseResource.GetModelStruct().FieldByPath(this.FieldName); this.FieldStruct != nil {
+			this.Typ = this.FieldStruct.Struct.Type
+		}
 	}
 	return nil
 }
 
 // Initialize initialize meta, will set valuer, setter if haven't configure it
-func (this *Meta) Initialize() error {
+func (this *Meta) Initialize(virtual bool) error {
+	if virtual {
+		return nil
+	}
 	if this.Valuer == nil {
-		setupValuer(this, this.FieldName, this.GetBaseResource().NewStruct())
+		setupValuer(this, this.FieldName, this.GetBaseResource().GetValue())
 	}
 
 	if this.Valuer == nil {
-		panic(fmt.Errorf("Meta %v is not supported for resource %v, no `Valuer` configured for it", this.FieldName, reflect.TypeOf(this.BaseResource.GetResource().Value)))
+		panic(fmt.Errorf("Meta %q is not supported for resource %v, no `Valuer` configured for it", this.Name, reflect.TypeOf(this.BaseResource.GetResource().Value)))
 	}
 
 	if this.Setter == nil {
@@ -289,13 +342,16 @@ func (this *Meta) IsNewRecord(value interface{}) bool {
 	if value == nil {
 		return true
 	}
-	if this.Resource == nil || reflect.ValueOf(this.Resource).IsNil() {
+	if this.Resource == nil || reflect.ValueOf(this.Resource).IsNil() || this.Resource.GetModelStruct().Dummy {
 		return false
 	}
 	if this.FieldStruct != nil && this.FieldStruct.IsChild {
 		return false
 	}
-	if struc := aorm.StructOf(value); struc != nil && struc.GetID(value).IsZero() {
+	if idGetter, ok := value.(aorm.IDGetter); ok {
+		return idGetter.GetID().IsZero()
+	}
+	if struc := aorm.StructOf(value); struc != nil && len(struc.PrimaryFields) > 0 && struc.GetID(value).IsZero() {
 		return true
 	}
 	return false
@@ -307,6 +363,9 @@ func getNestedModel(value interface{}, fieldName string, context *core.Context) 
 	for _, field := range fields[:len(fields)-1] {
 		if model.CanAddr() {
 			submodel := model.FieldByName(field)
+			if !submodel.IsValid() {
+				return nil
+			}
 			if aorm.ZeroIdOf(submodel.Interface()) && aorm.ZeroIdOf(model.Addr().Interface()) {
 				if submodel.CanAddr() {
 					if err := context.DB().Model(model.Addr().Interface()).Association(field).Find(submodel.Addr().Interface()).Error(); err != nil {

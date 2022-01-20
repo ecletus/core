@@ -2,6 +2,7 @@ package resource
 
 import (
 	"reflect"
+	"strings"
 
 	"github.com/jinzhu/copier"
 	"github.com/pkg/errors"
@@ -14,13 +15,14 @@ import (
 
 // MetaValues is slice of MetaValue
 type MetaValues struct {
-	Values []*MetaValue
-	ByName map[string]int
+	Disabled bool
+	Values   []*MetaValue
+	ByName   map[string]*MetaValue
 }
 
 func (this *MetaValues) Reset() {
 	this.Values = nil
-	this.ByName = map[string]int{}
+	this.ByName = map[string]*MetaValue{}
 }
 
 func (mvs *MetaValues) IsEmpty() bool {
@@ -79,7 +81,11 @@ func (mvs MetaValues) GetString(name string) string {
 }
 
 func (this *MetaValues) IsRequirementCheck() bool {
-	if len(this.Values) == 1 && this.Values[0].Meta.IsAlone() {
+	if this.Disabled || len(this.Values) == 0 {
+		return false
+	}
+
+	if this.Values[0].Meta != nil && len(this.Values) == 1 && this.Values[0].Meta.IsAlone() {
 		return false
 	}
 	for _, v := range this.Values {
@@ -96,13 +102,25 @@ func (this *MetaValues) IsRequirementCheck() bool {
 	return true
 }
 
+func (this *MetaValues) Add(metaValue ...*MetaValue) {
+	if this.ByName == nil {
+		this.ByName = map[string]*MetaValue{}
+	}
+	for _, metaValue := range metaValue {
+		this.ByName[metaValue.Name] = metaValue
+		this.Values = append(this.Values, metaValue)
+	}
+}
+
 func (this *MetaValues) CheckRequirement(context *core.Context, metaors ...Metaor) error {
 	if this.IsRequirementCheck() {
 		errors := core.Errors{}
 		for _, metaor := range metaors {
-			name := metaor.GetName()
-			if _, ok := this.ByName[name]; !ok && metaor.IsRequired() {
-				errors.AddError(ErrMetaCantBeBlank(context, metaor))
+			if !metaor.Proxier() {
+				name := metaor.GetName()
+				if _, ok := this.ByName[name]; !ok && metaor.RecordRequirer() == nil && metaor.IsRequired() {
+					errors.AddError(ErrMetaCantBeBlank(context, metaor))
+				}
 			}
 		}
 		if errors.HasError() {
@@ -115,14 +133,29 @@ func (this *MetaValues) CheckRequirement(context *core.Context, metaors ...Metao
 // MetaValue a struct used to hold information when convert inputs from HTTP form, JSON, CSV files and so on to meta values
 // It will includes field name, field value and its configured Meta, if it is a nested resource, will includes nested metas in its MetaValues
 type MetaValue struct {
-	Parent               *MetaValue
-	Name                 string
-	Value                interface{}
-	Index                int
-	MetaValues           *MetaValues
-	Meta                 Metaor
-	error                error
-	NoBlank bool
+	Processor  *Processor
+	Parent     *MetaValue
+	Name       string
+	Value      interface{}
+	Index      int
+	MetaValues *MetaValues
+	ReadOnly   bool
+	Meta       Metaor
+	error      error
+	NoBlank    bool
+}
+
+func (this *MetaValue) Path() string {
+	var s []string
+	var el = this
+	for el != nil && el.Name != "" {
+		s = append(s, el.Name)
+		el = el.Parent
+	}
+	for i, j := 0, len(s)-1; i < j; i, j = i+1, j-1 {
+		s[i], s[j] = s[j], s[i]
+	}
+	return strings.Join(s, ".")
 }
 
 func (this *MetaValue) FirstStringValue() (value string) {
@@ -139,7 +172,25 @@ func (this *MetaValue) FirstInterfaceValue() (value interface{}) {
 	return
 }
 
-func decodeMetaValuesToField(res Resourcer, field reflect.Value, metaValue *MetaValue, context *core.Context, merge ...bool) (err error) {
+func (this *MetaValue) EachQueryVal(prefix []string, cb func(prefix []string, name string, value interface{})) {
+	if this.MetaValues != nil {
+		prefix = append(prefix, this.Name)
+		for _, v := range this.MetaValues.Values {
+			v.EachQueryVal(prefix, cb)
+		}
+	} else if this.Value != nil {
+		switch t := this.Value.(type) {
+		case []string:
+			for _, v := range t {
+				cb(prefix, this.Name, v)
+			}
+		default:
+			cb(prefix, this.Name, t)
+		}
+	}
+}
+
+func decodeMetaValuesToField(res Resourcer, record interface{}, field reflect.Value, metaValue *MetaValue, context *core.Context, flag ProcessorFlag) (err error) {
 	defer func() {
 		if err != nil {
 			if !validations.IsError(err) {
@@ -147,11 +198,11 @@ func decodeMetaValuesToField(res Resourcer, field reflect.Value, metaValue *Meta
 			}
 		}
 	}()
+
 	// if field.Kind() == reflect.Struct {
 	if metaValue.Meta.IsInline() {
-		var notLoad bool
 		if field := metaValue.Meta.GetFieldStruct(); field != nil && field.TagSettings["-"] == "-" {
-			notLoad = true
+			flag |= ProcSkipLoad
 		}
 		typ := field.Type()
 		isPtr := typ.Kind() == reflect.Ptr
@@ -159,7 +210,7 @@ func decodeMetaValuesToField(res Resourcer, field reflect.Value, metaValue *Meta
 			typ = typ.Elem()
 		}
 		var value = field
-		if len(merge) > 0 && merge[0] {
+		if flag.Has(ProcMerge) {
 			if isPtr {
 				value = field.Elem()
 			} else {
@@ -173,11 +224,11 @@ func decodeMetaValuesToField(res Resourcer, field reflect.Value, metaValue *Meta
 			value = newValue
 		}
 		valueInterface := value.Interface()
-		associationProcessor := DecodeToResource(res, valueInterface, metaValue.MetaValues, context, notLoad)
+		associationProcessor := DecodeToResource(res, valueInterface, metaValue, context.MetaContextFactory(context, res, valueInterface), flag)
 		if err = associationProcessor.Start(); err != nil {
 			return
 		}
-		if !associationProcessor.SkipLeft {
+		if !associationProcessor.Flag.Has(ProcSkipLeft) {
 			if isPtr {
 				field.Set(value)
 			} else {
@@ -185,23 +236,35 @@ func decodeMetaValuesToField(res Resourcer, field reflect.Value, metaValue *Meta
 			}
 		}
 	} else if field.Kind() == reflect.Slice {
-		if metaValue.Index == 0 {
-			field.Set(reflect.Zero(field.Type()))
-		}
-
-		var fieldType = field.Type().Elem()
-		var isPtr bool
+		field.Set(reflect.Zero(field.Type()))
+		var (
+			fieldType = field.Type().Elem()
+			isPtr     bool
+			deletions uint
+		)
 		if fieldType.Kind() == reflect.Ptr {
 			fieldType = fieldType.Elem()
 			isPtr = true
 		}
 
-		value := reflect.New(fieldType)
-		associationProcessor := DecodeToResource(res, value.Interface(), metaValue.MetaValues, context)
-		if err = associationProcessor.Start(); err != nil {
-			return
-		}
-		if !associationProcessor.SkipLeft {
+		for _, mv := range metaValue.MetaValues.Values {
+			var (
+				value                = reflect.New(fieldType)
+				associationProcessor = DecodeToResource(res, value.Interface(), mv, context)
+			)
+
+			if err = associationProcessor.Start(); err != nil {
+				return
+			}
+
+			if associationProcessor.deleted {
+				deletions++
+				continue
+			}
+
+			if associationProcessor.Flag.Has(ProcSkipLeft) {
+				continue
+			}
 			if !reflect.DeepEqual(reflect.Zero(fieldType).Interface(), value.Elem().Interface()) {
 				if isPtr {
 					field.Set(reflect.Append(field, value))
@@ -209,6 +272,10 @@ func decodeMetaValuesToField(res Resourcer, field reflect.Value, metaValue *Meta
 					field.Set(reflect.Append(field, value.Elem()))
 				}
 			}
+		}
+
+		if deletions > 0 && field.IsNil() {
+			field.Set(reflect.MakeSlice(field.Type(), 0, 0))
 		}
 	}
 	return

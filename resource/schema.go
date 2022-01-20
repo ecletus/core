@@ -6,9 +6,10 @@ import (
 	"github.com/ecletus/core"
 )
 
+const DefaultFormInputPrefix = "QorResource"
+
 // Decode decode context to result according to resource definition
-func Decode(context *core.Context, result interface{}, res Resourcer, notLoad ...bool) (err error) {
-	var errors core.Errors
+func Decode(context *core.Context, result interface{}, res Resourcer, f ...ProcessorFlag) (err error) {
 	var metaValues *MetaValues
 
 	if !res.IsSingleton() {
@@ -17,17 +18,48 @@ func Decode(context *core.Context, result interface{}, res Resourcer, notLoad ..
 		}
 	}
 
-	metaors := res.GetContextMetas(context)
+	var (
+		metaors = res.GetContextMetas(context)
+		prefix  = context.FormOptions.InputPrefix
+	)
+	if prefix == "" {
+		prefix = DefaultFormInputPrefix
+	}
 
 	if strings.Contains(context.Request.Header.Get("Content-Type"), "json") {
 		metaValues, err = ConvertJSONToMetaValues(context, context.Request.Body, metaors)
 		context.Request.Body.Close()
 	} else {
-		metaValues, err = ConvertFormToMetaValues(context, context.Request, metaors, "QorResource.")
+		metaValues, err = ConvertFormToMetaValues(context, context.Request, metaors, prefix+".")
 	}
 
-	errors.AddError(err)
-	processor := DecodeToResource(res, result, metaValues, context, notLoad...)
+	if err != nil {
+		return
+	}
+
+	var errors core.Errors
+	if len(metaors) > 0 && len(metaValues.Values) == 0 {
+		for _, metaor := range metaors {
+			if metaor.IsRequired() {
+				errors.AddError(ErrMetaCantBeBlank(context, metaor))
+			}
+		}
+		if errors.HasError() {
+			return errors
+		}
+	}
+	processor := DecodeToResource(res, result, &MetaValue{Name: prefix, MetaValues: metaValues}, context, f...)
+	errors.AddError(processor.Start())
+
+	if errors.HasError() {
+		return errors
+	}
+	return nil
+}
+
+func DecodeMetaValues(context *core.Context, result interface{}, res Resourcer, prefix string, metaValues *MetaValues, f ...ProcessorFlag) (err error) {
+	var errors core.Errors
+	processor := DecodeToResource(res, result, &MetaValue{Name: prefix, MetaValues: metaValues}, context, f...)
 	errors.AddError(processor.Start())
 
 	if errors.HasError() {
