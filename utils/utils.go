@@ -481,3 +481,42 @@ func StructType(v interface{}) (typ reflect.Type) {
 	}
 	return
 }
+
+func StringsFilter(accept func(s string) bool, dst *[]string, src []string) {
+	for _, v := range src {
+		if accept(v) {
+			*dst = append(*dst, v)
+		}
+	}
+}
+
+func NoEmptyStrings(values ...string) (res []string) {
+	StringsFilter(func(s string) bool {
+		return s != ""
+	}, &res, values)
+	return
+}
+
+func StringsJoin(sep, lastSep string, values ...string) string {
+	var (
+		b   bytes.Buffer
+		wc  bool
+		end = len(values) - 1
+	)
+	if end < 0 {
+		return ""
+	}
+	for _, v := range values[0:end] {
+		if wc {
+			b.WriteString(sep)
+		}
+		wc = true
+		b.WriteString(v)
+	}
+
+	if wc {
+		b.WriteString(lastSep)
+	}
+	b.WriteString(values[end])
+	return b.String()
+}

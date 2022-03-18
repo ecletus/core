@@ -165,6 +165,20 @@ func (this *MetaValue) FirstStringValue() (value string) {
 	return
 }
 
+func (this *MetaValue) StringValue() string {
+	if this.Value != nil {
+		switch t := this.Value.(type) {
+		case string:
+			return t
+		case []string:
+			if len(t) > 0 {
+				return t[len(t)-1]
+			}
+		}
+	}
+	return ""
+}
+
 func (this *MetaValue) FirstInterfaceValue() (value interface{}) {
 	if this.Value != nil {
 		value = this.Value.([]interface{})[0]

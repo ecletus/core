@@ -45,14 +45,12 @@ func ToArray(value interface{}) (values []string) {
 	return
 }
 
-// ToString get string from value, if passed value is a slice, will use the first element
+// ToString get string from value, if passed value is a slice, will use the last element
 func ToString(value interface{}) string {
 	switch v := value.(type) {
 	case []string:
-		for _, s := range v {
-			if s != "" {
-				return s
-			}
+		if len(v) > 0 {
+			return v[len(v)-1]
 		}
 		return ""
 	case string:
@@ -60,16 +58,13 @@ func ToString(value interface{}) string {
 	case *string:
 		return *v
 	case []interface{}:
-		for _, s := range v {
-			if fmt.Sprint(s) != "" {
-				return fmt.Sprint(s)
-			}
+		if len(v) > 0 {
+			return fmt.Sprint(v[len(v)-1])
 		}
 		return ""
 	default:
-		return fmt.Sprintf("%v", value)
+		return fmt.Sprint(value)
 	}
-
 }
 
 // ToInt get int from value, if passed value is empty string, result will be 0

@@ -41,17 +41,25 @@ func (v *FormattedValue) IsZero() bool {
 		}
 		if v.IsZeroF == nil {
 			if z, ok := v.Raws.(aorm.Zeroer); ok {
-				return z.IsZero()
+				v.Zero = z.IsZero()
+				v.NoZero = !v.Zero
+				return v.Zero
 			}
 			return false
 		}
-		return v.IsZeroF(v.Record, v.Raws)
+		v.Zero = v.IsZeroF(v.Record, v.Raws)
+		v.NoZero = !v.Zero
+		return v.Zero
 	} else if v.Raw == nil {
 		return true
 	} else if z, ok := v.Raw.(aorm.Zeroer); ok {
-		return z.IsZero()
+		v.Zero = z.IsZero()
+		v.NoZero = !v.Zero
+		return v.Zero
 	} else if v.IsZeroF != nil {
-		return v.IsZeroF(v.Record, v.Raw)
+		v.Zero = v.IsZeroF(v.Record, v.Raw)
+		v.NoZero = !v.Zero
+		return v.Zero
 	}
 	return false
 }

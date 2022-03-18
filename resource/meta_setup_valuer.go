@@ -135,8 +135,15 @@ func setupValuer(meta *Meta, fieldName string, record interface{}) {
 							return relatedValue
 						}
 						return fieldValue.Interface()
-					} else if ID := modelStruct.GetID(recordValueInterface); ID != nil && !ID.IsZero() {
-						if rel.Kind.Is(aorm.HAS_MANY, aorm.M2M) {
+					} else if rel.Kind.Is(aorm.HAS_MANY, aorm.M2M, aorm.HAS_ONE, aorm.BELONGS_TO) {
+						if modelStruct.PrimaryField() != nil {
+							if ID := modelStruct.GetID(recordValueInterface); ID == nil || ID.IsZero() {
+								goto done
+							}
+						}
+
+						switch rel.Kind {
+						case aorm.HAS_MANY, aorm.M2M:
 							if fieldValue.IsNil() {
 								if context == nil {
 									return nil
@@ -175,7 +182,7 @@ func setupValuer(meta *Meta, fieldName string, record interface{}) {
 									return val
 								}
 							}
-						} else if rel.Kind.Is(aorm.HAS_ONE, aorm.BELONGS_TO) {
+						case aorm.HAS_ONE, aorm.BELONGS_TO:
 							if fieldValue.Kind() == reflect.Ptr && fieldValue.IsNil() {
 								if context == nil {
 									return nil
@@ -249,7 +256,7 @@ func setupValuer(meta *Meta, fieldName string, record interface{}) {
 						}
 					}
 				}
-
+			done:
 				switch fieldValue.Kind() {
 				case reflect.Ptr:
 					if fieldValue.IsNil() {
