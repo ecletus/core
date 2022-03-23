@@ -142,7 +142,7 @@ func (this *Processor) Initialize() (err error) {
 		if key.IsZero() {
 			if metaValue := this.MetaValues.ByName["id"]; metaValue != nil {
 				if metaValue.Meta == nil {
-					idS := metaValue.FirstStringValue()
+					idS := metaValue.StringValue()
 					if idS == "" && this.newRecord && this.deleted {
 						this.Flag |= ProcSkipLeft
 						return

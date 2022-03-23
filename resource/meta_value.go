@@ -1,6 +1,7 @@
 package resource
 
 import (
+	"fmt"
 	"reflect"
 	"strings"
 
@@ -73,7 +74,7 @@ func (mvs MetaValues) Get(name string) *MetaValue {
 func (mvs MetaValues) GetString(name string) string {
 	for _, mv := range mvs.Values {
 		if mv.Name == name {
-			return mv.FirstStringValue()
+			return mv.StringValue()
 		}
 	}
 
@@ -91,10 +92,10 @@ func (this *MetaValues) IsRequirementCheck() bool {
 	for _, v := range this.Values {
 		if v.Meta != nil {
 			if cd := v.Meta.IsSiblingsRequirementCheckDisabled(); cd.OnTrue() {
-				s := v.FirstStringValue()
+				s := v.StringValue()
 				return s == "true" || s == "on"
 			} else if cd.OnFalse() {
-				s := v.FirstStringValue()
+				s := v.StringValue()
 				return s == "false" || s == "no"
 			}
 		}
@@ -158,7 +159,7 @@ func (this *MetaValue) Path() string {
 	return strings.Join(s, ".")
 }
 
-func (this *MetaValue) FirstStringValue() (value string) {
+func (this *MetaValue) LastStringValue() (value string) {
 	if this.Value != nil {
 		value = this.Value.([]string)[0]
 	}
@@ -177,6 +178,19 @@ func (this *MetaValue) StringValue() string {
 		}
 	}
 	return ""
+}
+
+func (this *MetaValue) SetStringValue(v string) {
+	if this.Value != nil {
+		switch t := this.Value.(type) {
+		case string:
+			this.Value = v
+		case []string:
+			t[len(t)-1] = v
+		default:
+			panic(fmt.Errorf("MetaValue.SetStringValue: incompatible value type of %t", t))
+		}
+	}
 }
 
 func (this *MetaValue) FirstInterfaceValue() (value interface{}) {

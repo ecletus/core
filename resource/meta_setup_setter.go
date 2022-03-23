@@ -160,7 +160,7 @@ func setupSetter(meta *Meta, fieldName string, record interface{}) {
 						field.Set(reflect.Zero(field.Type()))
 						elType, _, _ := aorm.StructTypeOf(field.Type())
 						el := reflect.New(elType)
-						value := metaValue.FirstStringValue()
+						value := metaValue.StringValue()
 						id, err2 := relationship.AssociationModel.ParseIDString(value)
 						if err2 != nil {
 							return errors.Wrapf(err2, "parse id of %q", value)

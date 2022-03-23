@@ -14,10 +14,10 @@ type BytesParser interface {
 func MetaValuesToID(res Resourcer, metaValues *MetaValues) (aorm.ID, error) {
 	if metaValues != nil {
 		if metaField := metaValues.Get("ID"); metaField != nil {
-			return res.ParseID(metaField.FirstStringValue())
+			return res.ParseID(metaField.StringValue())
 		}
 		if metaField := metaValues.Get("id"); metaField != nil {
-			return res.ParseID(metaField.FirstStringValue())
+			return res.ParseID(metaField.StringValue())
 		}
 	}
 	return nil, nil
