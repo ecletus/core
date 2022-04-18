@@ -27,9 +27,23 @@ func ConvertFormDataToMetaValues(context *core.Context, form url.Values, multipa
 				sortedFormKeys = append(sortedFormKeys, key)
 			}
 		}
+		if multipartForm != nil {
+			for key := range multipartForm.File {
+				if strings.HasPrefix(key, prefix) {
+					sortedFormKeys = append(sortedFormKeys, key)
+				}
+			}
+		}
 	} else {
 		for key := range form {
 			sortedFormKeys = append(sortedFormKeys, key)
+		}
+		if multipartForm != nil {
+			for key := range multipartForm.File {
+				if strings.HasPrefix(key, prefix) {
+					sortedFormKeys = append(sortedFormKeys, key)
+				}
+			}
 		}
 	}
 
