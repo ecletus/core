@@ -11,7 +11,7 @@ import (
 	"github.com/ecletus/validations"
 
 	"github.com/ecletus/core"
-	"github.com/moisespsena-go/aorm"
+	"github.com/go-aorm/aorm"
 )
 
 // MetaValues is slice of MetaValue

@@ -17,7 +17,7 @@ import (
 	"golang.org/x/crypto/ssh"
 
 	"github.com/ecletus/core/db/dbconfig"
-	"github.com/moisespsena-go/aorm"
+	"github.com/go-aorm/aorm"
 )
 
 func MySQLfacotry(_ context.Context, config *dbconfig.DBConfig) (db *aorm.DB, err error) {

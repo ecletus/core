@@ -9,7 +9,7 @@ import (
 
 	"github.com/pkg/errors"
 
-	"github.com/moisespsena-go/aorm"
+	"github.com/go-aorm/aorm"
 
 	"github.com/ecletus/core"
 	"github.com/ecletus/core/utils"

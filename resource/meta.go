@@ -12,7 +12,7 @@ import (
 	"github.com/ecletus/roles"
 
 	"github.com/ecletus/core"
-	"github.com/moisespsena-go/aorm"
+	"github.com/go-aorm/aorm"
 )
 
 // MetaConfig base meta config struct

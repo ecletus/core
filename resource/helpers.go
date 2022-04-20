@@ -3,7 +3,7 @@ package resource
 import (
 	"reflect"
 
-	"github.com/moisespsena-go/aorm"
+	"github.com/go-aorm/aorm"
 )
 
 type BytesParser interface {

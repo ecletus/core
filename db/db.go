@@ -11,10 +11,10 @@ import (
 
 	"github.com/ecletus/core/db/dbconfig"
 
-	"github.com/moisespsena-go/aorm"
-	_ "github.com/moisespsena-go/aorm/dialects/mysql"
-	_ "github.com/moisespsena-go/aorm/dialects/postgres"
-	_ "github.com/moisespsena-go/aorm/dialects/sqlite"
+	"github.com/go-aorm/aorm"
+	_ "github.com/go-aorm/aorm/dialects/mysql"
+	_ "github.com/go-aorm/aorm/dialects/postgres"
+	_ "github.com/go-aorm/aorm/dialects/sqlite"
 )
 
 type RawDBConnection interface {

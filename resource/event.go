@@ -2,7 +2,7 @@ package resource
 
 import (
 	"github.com/ecletus/core"
-	"github.com/moisespsena-go/aorm"
+	"github.com/go-aorm/aorm"
 	"github.com/moisespsena-go/edis"
 	"github.com/moisespsena-go/path-helpers"
 )
@@ -95,7 +95,7 @@ type DBEvent struct {
 	Action  DBActionEvent
 	Context *core.Context
 	DBError error
-	old interface{}
+	old     interface{}
 }
 
 func NewDBEvent(action DBActionEvent, ctx *core.Context) *DBEvent {

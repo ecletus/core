@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"os"
 
+	"github.com/go-aorm/aorm"
 	_ "github.com/go-sql-driver/mysql"
-	"github.com/moisespsena-go/aorm"
 	_ "github.com/lib/pq"
 )
 

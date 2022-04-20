@@ -4,7 +4,7 @@ import (
 	"github.com/moisespsena-go/edis"
 
 	"github.com/ecletus/core"
-	"github.com/moisespsena-go/aorm"
+	"github.com/go-aorm/aorm"
 )
 
 // Resourcer interface

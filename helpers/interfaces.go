@@ -1,5 +1,5 @@
 package helpers
 
-import "github.com/moisespsena-go/aorm"
+import "github.com/go-aorm/aorm"
 
 type Zeroer = aorm.Zeroer

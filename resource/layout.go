@@ -1,7 +1,7 @@
 package resource
 
 import (
-	"github.com/moisespsena-go/aorm"
+	"github.com/go-aorm/aorm"
 )
 
 // context.Data().Set("skip.fragments", true)

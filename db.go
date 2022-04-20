@@ -13,7 +13,7 @@ import (
 	"github.com/ecletus/core/db/dbconfig"
 
 	"github.com/ecletus/core/db"
-	"github.com/moisespsena-go/aorm"
+	"github.com/go-aorm/aorm"
 	errwrap "github.com/moisespsena-go/error-wrap"
 )
 

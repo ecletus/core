@@ -29,7 +29,7 @@ import (
 
 	"github.com/ecletus/core/utils/uri"
 	uurl "github.com/ecletus/core/utils/url"
-	"github.com/moisespsena-go/aorm"
+	"github.com/go-aorm/aorm"
 )
 
 var CONTEXT_KEY = PREFIX

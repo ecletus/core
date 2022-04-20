@@ -4,7 +4,7 @@ import "C"
 import (
 	"reflect"
 
-	"github.com/moisespsena-go/aorm"
+	"github.com/go-aorm/aorm"
 	"github.com/pkg/errors"
 )
 

@@ -8,7 +8,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/moisespsena-go/aorm"
+	"github.com/go-aorm/aorm"
 	"github.com/moisespsena-go/stringvar"
 )
 

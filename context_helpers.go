@@ -4,7 +4,7 @@ import (
 	"context"
 	"net/http"
 
-	"github.com/moisespsena-go/aorm"
+	"github.com/go-aorm/aorm"
 )
 
 func stringOrDefault(value interface{}, defaul ...string) string {

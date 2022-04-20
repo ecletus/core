@@ -30,7 +30,7 @@ import (
 	"github.com/moisespsena-go/xroute"
 
 	"github.com/ecletus/core/db"
-	"github.com/moisespsena-go/aorm"
+	"github.com/go-aorm/aorm"
 )
 
 type SiteConfigType uint8

@@ -5,7 +5,7 @@ import (
 	"strings"
 
 	"github.com/ecletus/core"
-	"github.com/moisespsena-go/aorm"
+	"github.com/go-aorm/aorm"
 )
 
 func MustParseID(res Resourcer, s string) aorm.ID {
