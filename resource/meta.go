@@ -73,7 +73,7 @@ type Meta struct {
 	Required                   bool
 	Icon                       bool
 	validators                 []func(record interface{}, values *MetaValue, ctx *core.Context) (err error)
-	Data                       maps.SyncedMap
+	Data                       maps.Map
 	Typ                        reflect.Type
 	UIValidatorFunc            func(ctx *core.Context, recorde interface{}) string
 	LoadRelatedBeforeSave      bool
