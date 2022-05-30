@@ -70,6 +70,7 @@ type Site struct {
 	Log                    logging.Logger
 	PermissionModeProvider PermissionModeProvider
 	role                   *roles.Role
+	Mux                    *xroute.Mux
 }
 
 func (this *Site) ConfigSetter() ConfigSetter {
@@ -94,6 +95,7 @@ func NewSite(name string, basicConfig site_config.Config, configGetter getters.I
 		systemStorage:  filesystem.New(&filesystem.Config{RootDir: basicConfig.RootDir}),
 		storageNames:   oss.NewNames(),
 		handler:        xroute.NewMux(),
+		Mux:            xroute.NewMux(),
 	}
 	s.PermissionModeProvider = &SitePermissionModeProvider{
 		Site: s,
@@ -370,6 +372,22 @@ func (this *Site) ServeHTTPContext(w http.ResponseWriter, r *http.Request, rctx 
 
 func (this *Site) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	this.handler.ServeHTTPContext(w, r, nil)
+}
+
+func (this *Site) BuildHandler(parent *xroute.Mux) xroute.ContextHandler {
+	var md = this.Middlewares
+	md = append(md, &xroute.Middleware{
+		Name: "user-mux",
+		Handler: func(chain *xroute.ChainHandler) {
+			chain.Next()
+			if chain.Writer.Status() == 0 {
+				this.Mux.ServeHTTPContext(chain.Writer, chain.Request(), chain.Context)
+			}
+		},
+	})
+	handler := md.Handler(parent)
+	this.SetHandler(handler)
+	return handler
 }
 
 func (this *Site) NewContext() *Context {
