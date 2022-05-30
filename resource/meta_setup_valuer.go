@@ -228,28 +228,16 @@ func setupValuer(meta *Meta, fieldName string, record interface{}) {
 							return nil
 						}
 
-						var (
-							recordValueInterface = recordReflectValue.Addr().Interface()
-							ID                   = modelStruct.GetID(recordValueInterface)
-						)
-
-						if ID.IsZero() {
-							return nil
-						}
-
 						if fieldValue.Kind() == reflect.Ptr && fieldValue.IsNil() {
 							if fieldValue.Kind() == reflect.Ptr && fieldValue.IsNil() {
 								fieldValue.Set(reflect.New(fieldValue.Type().Elem()))
 							}
 						}
 
-						relatedValue := reflect.Indirect(fieldValue).Addr().Interface()
-
 						var DB = context.DB().New().Unscoped()
 
-						DB = link.Load(field, DB, ID, relatedValue, aorm.LinkFlagTagColumnsSelector)
+						DB = link.FastLoad(DB, field, fieldValue, modelStruct, record, aorm.LinkFlagTagColumnsSelector)
 						if err := DB.Error; err != nil {
-							aorm.SetZero(fieldValue)
 							if !aorm.IsRecordNotFoundError(err) {
 								context.AddError(errors.Wrapf(err, "meta preload related field %q", meta.FieldName))
 							}
